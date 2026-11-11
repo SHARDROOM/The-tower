@@ -10,6 +10,7 @@ import { NodeIO } from '@gltf-transform/core';
 import { ALL_EXTENSIONS } from '@gltf-transform/extensions';
 import { dedup, meshopt, prune, resample, simplify, textureCompress, weld } from '@gltf-transform/functions';
 import { MeshoptDecoder, MeshoptEncoder, MeshoptSimplifier } from 'meshoptimizer';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import sharp from 'sharp';
 import * as THREE from 'three';
 
@@ -218,6 +219,27 @@ for (const clipName of CLIPS) {
   }
   add(pelvisNode, 'translation', 'VEC3', pos);
   console.log(`동작 ${clipName.padEnd(8)} ${clip.duration.toFixed(2)}초, ${frames}프레임`);
+}
+
+// ── 5. 이 모델 전용으로 직접 만든 동작 (scripts/blender/heavy_anims.py 가 만든 scripts/anim/*.json) ──
+const ANIM_DIR = 'scripts/anim';
+for (const file of existsSync(ANIM_DIR) ? readdirSync(ANIM_DIR).filter((f) => f.endsWith('.json')).sort() : []) {
+  const a = JSON.parse(readFileSync(`${ANIM_DIR}/${file}`, 'utf8'));
+  const times = Float32Array.from({ length: a.frames }, (_, f) => (f / (a.frames - 1)) * a.duration);
+  const anim = doc.createAnimation(a.name);
+  const add = (node, path, type, array) => {
+    const sampler = doc.createAnimationSampler()
+      .setInput(doc.createAccessor().setType('SCALAR').setArray(times).setBuffer(buffer))
+      .setOutput(doc.createAccessor().setType(type).setArray(Float32Array.from(array)).setBuffer(buffer))
+      .setInterpolation('LINEAR');
+    anim.addSampler(sampler).addChannel(doc.createAnimationChannel().setTargetNode(node).setTargetPath(path).setSampler(sampler));
+  };
+  for (const [bone, values] of Object.entries(a.rotations)) {
+    if (!jointNodes.has(bone)) throw new Error(`${file}: 모델에 없는 뼈 ${bone}`);
+    add(jointNodes.get(bone), 'rotation', 'VEC4', values);
+  }
+  add(pelvisNode, 'translation', 'VEC3', a.pelvis);
+  console.log(`동작 ${a.name.padEnd(8)} ${a.duration.toFixed(2)}초 (직접 제작)`);
 }
 
 await doc.transform(

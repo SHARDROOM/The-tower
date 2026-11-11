@@ -18,6 +18,12 @@ const ROOM_COLOR: Record<RoomKind, number> = {
 // 캐릭터 모델 배율(원본 키 약 1.8, 7~8등신)
 const MODEL_SCALE: Record<EnemyKind, number> = { minion: 1.0, skeleton: 1.08, mage: 1.0, boss: 2.1 };
 const HERO_SCALE = 1.05;
+// 주인공의 묵직한 내려베기. 준비가 길고 타격은 순간이라, 공격 시간의 뒤쪽(HIT_AT)에서 판정한다.
+const ATTACK_TIME = 0.62;      // 공격 한 번의 길이(초). 이 동안 거의 움직이지 못한다
+const ATTACK_COOLDOWN = 0.82;  // 다음 공격까지의 간격(초)
+const HIT_AT = 0.6;            // 공격 시간 중 타격 판정 지점(0~1)
+const ATTACK_CLIP_HIT = 0.63;  // Heavy_Attack 동작에서 검이 목표를 지나는 시각(초)
+const RUN_CLIP_SPEED = 4;      // Heavy_Run 동작이 맞춰진 이동 속도
 // 구르기: 지속 시간(초, 이 동안 무적)과 이동 속도. 약 4m 를 구른다.
 const DODGE_TIME = 0.7;
 const DODGE_SPEED = 6;
@@ -113,7 +119,8 @@ export class Game {
   private targetYaw = Math.PI;
   private atkCd = 0;
   private atkT = 0;
-  private atkDur = 0.3;
+  private atkDur = ATTACK_TIME;
+  private hitStop = 0;
   private atkHit = false;
   private dodgeT = 0;
   private dodgeCd = 0;
@@ -477,7 +484,12 @@ export class Game {
 
   private frame() {
     this.timer.update();
-    const dt = Math.min(this.timer.getDelta(), 0.05);
+    let dt = Math.min(this.timer.getDelta(), 0.05);
+    // 타격 순간 화면을 아주 잠깐 멈춰 묵직함을 준다
+    if (this.hitStop > 0) {
+      this.hitStop -= dt;
+      dt *= 0.05;
+    }
     this.input.poll(dt);
     if (this.state === 'play' && !this.paused) {
       this.updatePlayer(dt);
@@ -594,7 +606,7 @@ export class Game {
       pos.z += this.dodgeZ * DODGE_SPEED * dt;
     } else {
       if (inp.attack && this.atkCd <= 0) this.startAttack();
-      const speed = s.speed * (this.atkT > 0 ? 0.35 : 1);
+      const speed = s.speed * (this.atkT > 0 ? 0.12 : 1);
       if (moving) {
         pos.x += wx * speed * dt;
         pos.z += wz * speed * dt;
@@ -604,7 +616,7 @@ export class Game {
 
     if (this.atkT > 0) {
       this.atkT -= dt;
-      if (!this.atkHit && this.atkDur - this.atkT >= this.atkDur * 0.5) this.strike();
+      if (!this.atkHit && this.atkDur - this.atkT >= this.atkDur * HIT_AT) this.strike();
     }
     this.collide(pos, 0.45);
 
@@ -617,11 +629,11 @@ export class Game {
     this.heroRoot.rotation.y = this.yaw;
     if (this.dodgeT <= 0 && this.atkT <= 0) {
       this.hero.release();
-      this.hero.play(moving ? 'Jog_Fwd_Loop' : 'Sword_Idle', { speed: moving ? s.speed / 4.2 : 1 });
+      this.hero.play(moving ? 'Heavy_Run' : 'Sword_Idle', { speed: moving ? s.speed / RUN_CLIP_SPEED : 1, fade: 0.18 });
     }
     if (this.atkT > 0) {
       const q = 1 - this.atkT / this.atkDur;
-      this.slash.mesh.visible = q > 0.35;
+      this.slash.mesh.visible = q > HIT_AT - 0.08;
       this.slash.mat.opacity = 0.75 * (1 - q);
       const r = 2.7 * s.range;
       this.slash.mesh.scale.set(r, r, 1);
@@ -634,11 +646,12 @@ export class Game {
 
   private startAttack() {
     const s = this.stats;
-    this.atkDur = 0.3 / s.atkSpeed;
+    this.atkDur = ATTACK_TIME / s.atkSpeed;
     this.atkT = this.atkDur;
-    this.atkCd = 0.42 / s.atkSpeed;
+    this.atkCd = ATTACK_COOLDOWN / s.atkSpeed;
     this.atkHit = false;
-    this.hero.play('Sword_Attack', { once: true, speed: 3.6 * s.atkSpeed, fade: 0.06 });
+    // 동작에서 검이 목표를 지나는 순간이 타격 판정과 겹치도록 재생 속도를 맞춘다
+    this.hero.play('Heavy_Attack', { once: true, speed: ATTACK_CLIP_HIT / (this.atkDur * HIT_AT), fade: 0.1 });
     // 가까운 적 쪽으로 자동 조준(모바일에서 방향 맞추기 쉽게)
     const pos = this.heroRoot.position;
     let best: Enemy | null = null;
@@ -677,7 +690,10 @@ export class Game {
       this.damageEnemy(e, s.atk * rand(0.9, 1.1) * (crit ? 2 : 1), crit, dx / (d || 1), dz / (d || 1));
       hitAny = true;
     }
-    if (hitAny) this.shake = Math.max(this.shake, 0.25);
+    if (hitAny) {
+      this.shake = Math.max(this.shake, 0.45);
+      this.hitStop = 0.07;
+    }
   }
 
   private damageEnemy(e: Enemy, dmg: number, crit: boolean, nx: number, nz: number) {

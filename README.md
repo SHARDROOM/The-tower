@@ -44,6 +44,7 @@ npm run build    # 타입 검사 + dist/ 빌드
 | `src/settings.ts` | 두루마리 설정창, 버튼 크기·배치 설정과 저장 |
 | `src/input.ts` | 터치 조이스틱·버튼, 키보드·마우스 입력 |
 | `scripts/retarget.mjs` | 리깅된 모델에 공용 동작을 옮겨 담는 스크립트 |
+| `scripts/blender/heavy_anims.py` | 주인공 전용 동작(달리기·내려베기)을 만드는 Blender 파이썬 스크립트 |
 | `scripts/rig-character.mjs` | 뼈대 없는 인간형 모델에 공용 뼈대를 자동으로 심는 스크립트 |
 | `scripts/convert-weapon.mjs` | 세워진 무기 모델을 손에 쥘 수 있는 소품으로 변환하는 스크립트 |
 | `scripts/build-assets.mjs` | 원본 모델에서 필요한 것만 골라 압축해 `public/models/`에 넣는 변환 스크립트 |
@@ -59,6 +60,10 @@ npm run build    # 타입 검사 + dist/ 빌드
   이 뼈대는 공용 뼈대와 뼈 이름도 기본 자세도 달라서(모델은 A자, 공용 뼈대는 T자),
   `scripts/retarget.mjs`가 프레임마다 월드 공간 회전을 옮긴다: `node scripts/retarget.mjs <리깅된 모델.glb> <이름>`.
   뼈대가 없는 모델이라면 `scripts/rig-character.mjs`로 공용 뼈대에 자동 리깅할 수 있다(품질은 더 낮다).
+- 주인공 전용 동작(무게감 있는 달리기 `Heavy_Run`, 내려베기 `Heavy_Attack`)은 직접 만든 것이다.
+  `scripts/blender/heavy_anims.py`를 Blender의 파이썬(`pip install bpy`)으로 실행하면 `scripts/anim/*.json`이 만들어지고,
+  `scripts/retarget.mjs`가 이를 모델 파일에 함께 담는다. 발과 검 든 손은 2관절 IK로 정한 위치에 놓는다.
+  동작을 고치려면 그 파이썬 파일의 수치(보폭, 자세 높이, 공격의 시각별 손 위치 등)를 바꾸면 된다.
 - 주인공의 검: 직접 제공한 모델을 `scripts/convert-weapon.mjs`로 변환한 것.
 - 소품과 무기: [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의 Dungeon Remastered / Adventurers / Skeletons 팩.
 
