@@ -194,6 +194,10 @@ HAND_STATE = {}   # 손마다 앞 프레임의 손등 방향 (동작을 새로 �
 
 def write(name, duration, pose_at, loop=False, notes=None):
     HAND_STATE.clear()
+    if loop:
+        # 손목 비틀림은 앞 프레임을 따라가며 정해지므로, 한 바퀴 미리 돌려 자리를 잡은 뒤 기록해야 이음매가 맞는다
+        for f in range(round(duration * FPS)):
+            solve(pose_at(f / FPS))
     frames = round(duration * FPS) + 1
     tracks = {b: [] for b in BONES}
     pelvis = []
@@ -214,6 +218,10 @@ def write(name, duration, pose_at, loop=False, notes=None):
     with open(out, 'w') as fp:
         json.dump({'name': name, 'duration': duration, 'frames': frames, 'notes': notes or {}, 'pelvis': pelvis, 'rotations': tracks}, fp)
     print(f'{name}: {duration:.2f}s, {frames} frames')
+
+
+def V(*xyz):
+    return Vector(xyz)
 
 
 # ── 무게감 있는 달리기 ─────────────────────────────────────────────────────
@@ -258,9 +266,14 @@ def run_pose(t):
         off, toe_down = run_foot((ph + shift) % 1.0)
         off.x = -0.012 * (1 if s == 'L' else -1)   # 발을 조금 모아 디딘다
         p.foot[s] = (off, toe_down, 0.0)
-    # 왼팔: 오른발이 나갈 때 앞으로. 오른팔: 검을 세워 들고 작게만 흔든다.
-    p.arm['L'] = Arm(upper=aa(X, 20 * c - 4) @ aa(Z, -24), elbow=78 - 10 * c, grip=55)
-    p.arm['R'] = Arm(upper=aa(X, 14 - 7 * c) @ aa(Z, 22), elbow=84 + 4 * c, grip=62)
+    # 왼팔: 오른발이 나갈 때 앞으로. 팔꿈치를 조깅처럼 바짝 접지 않고 반쯤만 굽혀 크게 흔든다.
+    p.arm['L'] = Arm(upper=aa(X, 24 * c - 2) @ aa(Z, -18), elbow=48 - 14 * c, grip=55)
+    # 오른팔: 검을 든 팔은 거의 편 채 몸 옆으로 늘어뜨리고, 칼날은 앞쪽 아래를 향하게 들고 달린다.
+    # 손은 어깨에서 아래·약간 앞·바깥으로(팔 길이 약 0.236 중 0.226) 두어 팔꿈치가 살짝만 굽는다.
+    # 걸음에 맞춰 손이 앞뒤로 조금 흔들리고, 칼끝은 그 반대로 살짝 까딱인다.
+    p.aim = p.yaw
+    hand = V(-0.055, -0.212, 0.055 - 0.022 * c)
+    p.arm['R'] = Arm(reach=hand, hint=V(-0.25, 0.1, -1.0), blade=aa(Y, p.aim) @ V(0.16, -0.30 - 0.05 * c, 1.0), grip=65)
     return p
 
 
@@ -298,10 +311,6 @@ def track(t, values):
     u = k - i
     p0, p1, p2, p3 = values[max(i - 1, 0)], values[i], values[i + 1], values[min(i + 2, len(values) - 1)]
     return 0.5 * ((2 * p1) + (p2 - p0) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u + (3 * p1 - p0 - 3 * p2 + p3) * u**3)
-
-
-def V(*xyz):
-    return Vector(xyz)
 
 
 # 손 위치는 오른 어깨에서 잰 벡터다(팔 길이는 약 0.236). 0.15~0.21 사이로 두어 팔꿈치가 잠기거나 완전히 접히지 않게 한다.
