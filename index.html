@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#0d0b12" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>The Tower</title>
+    <style>
+      :root {
+        --sat: env(safe-area-inset-top, 0px);
+        --sab: env(safe-area-inset-bottom, 0px);
+        --sal: env(safe-area-inset-left, 0px);
+        --sar: env(safe-area-inset-right, 0px);
+        --gold: #f2d38a;
+      }
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+      html, body {
+        margin: 0; height: 100%; overflow: hidden; background: #0d0b12; color: #f4ecd8;
+        font-family: "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", system-ui, sans-serif;
+        user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none;
+      }
+      #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+      #hud { position: fixed; inset: 0; pointer-events: none; }
+      #top {
+        position: absolute; top: calc(10px + var(--sat)); left: calc(12px + var(--sal));
+        right: calc(12px + var(--sar)); display: flex; align-items: flex-start; gap: 12px;
+      }
+      .bar {
+        position: relative; height: 18px; border-radius: 9px; background: rgba(0, 0, 0, 0.55);
+        border: 1px solid rgba(255, 255, 255, 0.25); overflow: hidden;
+      }
+      #hpbar { width: min(42vw, 260px); }
+      #hpfill { height: 100%; width: 100%; background: linear-gradient(#ff6b6b, #c22f3d); transition: width 0.15s; }
+      #hptext {
+        position: absolute; inset: 0; text-align: center; font-size: 12px; line-height: 17px;
+        font-weight: 700; text-shadow: 0 1px 2px #000;
+      }
+      #items { margin-top: 6px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px; max-width: 46vw; }
+      #items span { background: rgba(0, 0, 0, 0.45); border-radius: 6px; padding: 1px 6px; }
+      #floor {
+        margin-left: auto; text-align: right; font-weight: 800; font-size: 16px; color: var(--gold);
+        text-shadow: 0 1px 3px #000;
+      }
+      #floor small { display: block; font-weight: 600; font-size: 12px; color: #d8cfc0; }
+      #boss {
+        position: absolute; top: calc(58px + var(--sat)); left: 50%; transform: translateX(-50%);
+        width: min(70vw, 460px); text-align: center; display: none;
+      }
+      #bossname { font-weight: 800; color: #ffb3a1; text-shadow: 0 1px 3px #000; margin-bottom: 3px; }
+      #bossfill { height: 100%; width: 100%; background: linear-gradient(#e2562f, #7d1616); transition: width 0.15s; }
+      #toast {
+        position: absolute; top: 24%; left: 50%; transform: translateX(-50%); max-width: 86vw;
+        padding: 8px 16px; border-radius: 10px; background: rgba(12, 10, 18, 0.8);
+        border: 1px solid rgba(242, 211, 138, 0.5); font-weight: 700; text-align: center;
+        opacity: 0; transition: opacity 0.25s;
+      }
+      #toast.show { opacity: 1; }
+      #dmg span {
+        position: absolute; font-weight: 900; font-size: 18px; color: #fff; text-shadow: 0 1px 3px #000;
+        transform: translate(-50%, -50%); animation: rise 0.7s ease-out forwards; white-space: nowrap;
+      }
+      #dmg span.crit { color: #ffd84a; font-size: 24px; }
+      #dmg span.hurt { color: #ff6b6b; }
+      #dmg span.heal { color: #7dffa0; }
+      @keyframes rise { to { transform: translate(-50%, -190%); opacity: 0; } }
+      #hurt {
+        position: absolute; inset: 0; opacity: 0; transition: opacity 0.3s;
+        background: radial-gradient(transparent 55%, rgba(200, 20, 30, 0.55));
+      }
+      #stick {
+        position: absolute; width: 120px; height: 120px; margin: -60px 0 0 -60px; border-radius: 50%;
+        background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); display: none;
+      }
+      #knob {
+        position: absolute; left: 50%; top: 50%; width: 52px; height: 52px; margin: -26px 0 0 -26px;
+        border-radius: 50%; background: rgba(255, 255, 255, 0.4);
+      }
+      .btn {
+        position: absolute; pointer-events: auto; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.4);
+        background: rgba(20, 16, 28, 0.55); color: #fff; font-weight: 800; touch-action: none;
+        display: flex; align-items: center; justify-content: center; padding: 0;
+      }
+      .btn.down { background: rgba(242, 211, 138, 0.45); }
+      #btnAtk { width: 88px; height: 88px; font-size: 20px; right: calc(22px + var(--sar)); bottom: calc(26px + var(--sab)); }
+      #btnDodge { width: 64px; height: 64px; font-size: 15px; right: calc(122px + var(--sar)); bottom: calc(18px + var(--sab)); }
+      #btnDodge.cd { opacity: 0.4; }
+      #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
+      #fade.on { opacity: 1; }
+      .screen {
+        position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 14px; text-align: center; padding: 24px;
+        background: radial-gradient(rgba(30, 22, 44, 0.82), rgba(6, 5, 10, 0.96));
+      }
+      .screen.hidden { display: none; }
+      .screen h1 { margin: 0; font-size: clamp(34px, 9vw, 64px); letter-spacing: 0.12em; color: var(--gold); text-shadow: 0 3px 12px #000; }
+      .screen p { margin: 0; color: #cfc6b4; line-height: 1.6; font-size: 14px; }
+      .screen button {
+        margin-top: 8px; font: inherit; font-weight: 800; font-size: 18px; color: #1b1408; background: var(--gold);
+        border: 0; border-radius: 12px; padding: 14px 38px;
+      }
+      @media (hover: hover) and (pointer: fine) { #btnAtk, #btnDodge { opacity: 0.55; } }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <div id="hud">
+      <div id="top">
+        <div>
+          <div class="bar" id="hpbar"><div id="hpfill"></div><div id="hptext"></div></div>
+          <div id="items"></div>
+        </div>
+        <div id="floor"></div>
+      </div>
+      <div id="boss"><div id="bossname"></div><div class="bar"><div id="bossfill"></div></div></div>
+      <div id="hurt"></div>
+      <div id="dmg"></div>
+      <div id="toast"></div>
+      <div id="stick"><div id="knob"></div></div>
+      <button class="btn" id="btnDodge">구르기</button>
+      <button class="btn" id="btnAtk">공격</button>
+    </div>
+    <div id="fade"></div>
+    <div id="menu" class="screen">
+      <h1>THE TOWER</h1>
+      <p>방의 몬스터를 처치하고, 아이템을 모아 탑의 끝까지 오르세요.</p>
+      <p>
+        모바일: 화면 왼쪽 드래그로 이동 · 오른쪽 드래그로 시점 · 공격 / 구르기 버튼<br />
+        PC: WASD 이동 · J/Space 공격 · K/Shift 구르기 · 마우스 드래그 또는 Q/E 시점
+      </p>
+      <p id="best"></p>
+      <button id="start">탑 오르기</button>
+    </div>
+    <div id="dead" class="screen hidden">
+      <h1>쓰러졌습니다</h1>
+      <p id="result"></p>
+      <button id="retry">다시 도전</button>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
