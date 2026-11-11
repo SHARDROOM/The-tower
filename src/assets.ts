@@ -3,14 +3,34 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 
-// 모델은 KayKit(Kay Lousberg, CC0) 팩에서 가져와 scripts/build-assets.mjs 로 변환한 것이다.
+// 캐릭터·애니메이션은 Quaternius, 소품·무기는 KayKit 팩(모두 CC0)에서 가져와
+// scripts/build-assets.mjs 로 변환한 것이다.
 const NAMES = [
-  'knight', 'minion', 'warrior', 'mage', 'blade', 'axe', 'staff', 'shield',
+  'mannequin', 'ranger', 'cultist', 'brute', 'sword', 'blade', 'axe', 'staff',
   'chest', 'pillar', 'column', 'torch', 'barrel', 'crates',
 ] as const;
 export type AssetName = (typeof NAMES)[number];
 
-const store = new Map<AssetName, { scene: THREE.Group; clips: THREE.AnimationClip[] }>();
+const store = new Map<AssetName, { scene: THREE.Group }>();
+/** 모든 캐릭터가 같은 뼈대를 쓰므로 애니메이션 클립은 한 벌을 공유한다. */
+let clips: THREE.AnimationClip[] = [];
+
+/**
+ * 체형이 다른 캐릭터에 같은 클립을 쓰려면 뼈의 회전만 가져와야 한다.
+ * 위치는 골반(전신의 상하 움직임)만 남기고, 나머지 위치·크기 트랙은 버린다.
+ */
+function retargetable(clip: THREE.AnimationClip) {
+  clip.tracks = clip.tracks.filter((t) => t.name.endsWith('.quaternion') || t.name === 'pelvis.position');
+  return clip;
+}
+
+/** 무기를 쥐는 손 뼈(hand_r) 기준 자세. 쥔 주먹 위로 칼날이 서도록 맞춘 값이다. */
+const GRIP: Partial<Record<AssetName, { p: [number, number, number]; r: [number, number, number]; s: number }>> = {
+  sword: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.62 },
+  blade: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.7 },
+  axe: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.8 },
+  staff: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.8 },
+};
 
 /** 모바일에서 가볍게 돌도록 PBR 재질을 Lambert 로 바꾼다. 발광 재질(해골 눈)은 unlit 으로. */
 function simplify(scene: THREE.Object3D) {
@@ -41,7 +61,8 @@ export async function loadAssets(onProgress: (ratio: number) => void) {
     NAMES.map(async (name) => {
       const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}models/${name}.glb`);
       simplify(gltf.scene);
-      store.set(name, { scene: gltf.scene, clips: gltf.animations });
+      store.set(name, { scene: gltf.scene });
+      if (name === 'mannequin') clips = gltf.animations.map(retargetable);
       onProgress(++done / NAMES.length);
     }),
   );
@@ -76,7 +97,7 @@ export class Actor {
   private currentName = '';
   private busy = false;
 
-  constructor(name: AssetName, opts: { right?: AssetName; left?: AssetName; tint?: number } = {}) {
+  constructor(name: AssetName, opts: { right?: AssetName; tint?: number } = {}) {
     const src = store.get(name)!;
     this.root = SkeletonUtils.clone(src.scene);
     const cloned = new Map<THREE.Material, THREE.Material>();
@@ -95,12 +116,17 @@ export class Actor {
       }
       mesh.material = c;
     });
-    // GLTFLoader 가 노드 이름의 '.' 을 지우므로 handslot.r → handslotr
-    if (opts.right) this.root.getObjectByName('handslotr')?.add(prop(opts.right));
-    if (opts.left) this.root.getObjectByName('handslotl')?.add(prop(opts.left));
+    if (opts.right) {
+      const g = GRIP[opts.right]!;
+      const weapon = prop(opts.right, g.s);
+      weapon.name = 'weapon';
+      weapon.position.set(...g.p);
+      weapon.rotation.set(...g.r);
+      this.root.getObjectByName('hand_r')?.add(weapon);
+    }
 
     this.mixer = new THREE.AnimationMixer(this.root);
-    for (const clip of src.clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
+    for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.mixer.addEventListener('finished', () => (this.busy = false));
   }
 

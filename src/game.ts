@@ -8,23 +8,24 @@ type RoomKind = 'combat' | 'elite' | 'treasure' | 'boss' | 'stairs';
 type State = 'menu' | 'play' | 'transition' | 'dead';
 
 const ROOMS_PER_FLOOR = 4;
-const WALL_H = 6;
+const WALL_H = 8;
 const ROOM_LABEL: Record<RoomKind, string> = {
   combat: '전투', elite: '정예', treasure: '보물', boss: '보스', stairs: '다음 층으로',
 };
 const ROOM_COLOR: Record<RoomKind, number> = {
   combat: 0xff8a4a, elite: 0xd04aff, treasure: 0xffd84a, boss: 0xff3030, stairs: 0x6ad0ff,
 };
-// 캐릭터 모델 배율(원본 키 약 2.3)
-const MODEL_SCALE: Record<EnemyKind, number> = { minion: 0.72, skeleton: 0.85, mage: 0.85, boss: 2.0 };
+// 캐릭터 모델 배율(원본 키 약 1.8, 7~8등신)
+const MODEL_SCALE: Record<EnemyKind, number> = { minion: 1.0, skeleton: 1.08, mage: 1.0, boss: 2.1 };
+const HERO_SCALE = 1.05;
 // [클립, 타격 순간(초)] — 예고 시간이 끝나는 순간에 타격 동작이 맞도록 재생 속도를 정한다
 const ATTACK_ANIM: Record<string, [string, number]> = {
-  'minion.melee': ['Unarmed_Melee_Attack_Punch_A', 0.5],
-  'skeleton.melee': ['1H_Melee_Attack_Chop', 0.45],
-  'mage.shot': ['Spellcast_Shoot', 0.4],
-  'boss.melee': ['1H_Melee_Attack_Jump_Chop', 0.75],
-  'boss.burst': ['Spellcast_Summon', 1.6],
-  'boss.charge': ['Taunt', 0.9],
+  'minion.melee': ['Punch_Cross', 0.45],
+  'skeleton.melee': ['Sword_Attack', 0.7],
+  'mage.shot': ['Spell_Simple_Shoot', 0.3],
+  'boss.melee': ['Sword_Attack', 0.7],
+  'boss.burst': ['Spell_Simple_Shoot', 0.3],
+  'boss.charge': ['Spell_Simple_Enter', 0.6],
 };
 // 3개 층마다 탑의 분위기(바닥·벽 색조)가 바뀐다.
 const THEMES = [0xffffff, 0xb4d6a8, 0xe0a890, 0xa8bce8];
@@ -78,8 +79,8 @@ export class Game {
   private wallTex = brickTexture();
   private floorMat = new THREE.MeshLambertMaterial({ map: this.floorTex });
   private wallMat = new THREE.MeshLambertMaterial({ map: this.wallTex });
-  private torchA = new THREE.PointLight(0xffa860, 60, 22);
-  private torchB = new THREE.PointLight(0xffa860, 60, 22);
+  private torchA = new THREE.PointLight(0xffa860, 110, 34);
+  private torchB = new THREE.PointLight(0xffa860, 110, 34);
   private barFg = new THREE.SpriteMaterial({ color: 0xe84a4a, depthTest: false });
   private barBg = new THREE.SpriteMaterial({ color: 0x000000, opacity: 0.6, transparent: true, depthTest: false });
 
@@ -98,9 +99,8 @@ export class Game {
   private cleared = false;
 
   private heroRoot = new THREE.Group();
-  private hero = new Actor('knight');
+  private hero = new Actor('ranger', { right: 'sword' });
   private slash = makeSlash();
-  private atkCount = 0;
   private stats: Stats = baseStats();
   private items: ItemDef[] = [];
   private hp = 100;
@@ -120,7 +120,7 @@ export class Game {
   private camYaw = 0;
   private camTarget = new THREE.Vector3();
   private shake = 0;
-  private camDist = 10;
+  private camDist = 8.5;
 
   floor = 1;
   roomIdx = 0;
@@ -134,14 +134,14 @@ export class Game {
     this.input = new Input(canvas);
 
     this.scene.background = new THREE.Color(0x0d0b12);
-    this.scene.fog = new THREE.Fog(0x0d0b12, 18, 46);
+    this.scene.fog = new THREE.Fog(0x0d0b12, 26, 70);
     this.scene.add(new THREE.HemisphereLight(0xaab4d8, 0x2a2018, 1.5));
     const sun = new THREE.DirectionalLight(0xfff0d8, 1.3);
     sun.position.set(4, 10, 6);
-    blobShadow(0.6, this.heroRoot);
-    this.hero.root.scale.setScalar(0.85);
+    blobShadow(0.45, this.heroRoot);
+    this.hero.root.scale.setScalar(HERO_SCALE);
     this.heroRoot.add(this.hero.root, this.slash.mesh);
-    this.hero.play('Idle');
+    this.hero.play('Sword_Idle');
     this.scene.add(sun, this.torchA, this.torchB, this.room, this.heroRoot);
 
     for (let i = 0; i < 48; i++) {
@@ -178,7 +178,7 @@ export class Game {
     this.heroRoot.visible = true;
     this.hero.release();
     this.hero.root.visible = true;
-    this.hero.play('Idle');
+    this.hero.play('Sword_Idle');
     $('menu').classList.add('hidden');
     $('dead').classList.add('hidden');
     this.input.reset();
@@ -221,7 +221,7 @@ export class Game {
     this.heroRoot.visible = true;
     this.slash.mesh.visible = false;
     this.hero.root.visible = true;
-    this.hero.play('Death_A', { once: true });
+    this.hero.play('Death01', { once: true, speed: 1.5 });
     const best = Math.max(this.floor, Number(localStorage.getItem('tower.best') || 0));
     localStorage.setItem('tower.best', String(best));
     $('result').innerHTML = `도달: <b>${this.floor}층</b> · 처치: <b>${this.kills}</b><br/>최고 기록: ${best}층`;
@@ -248,8 +248,8 @@ export class Game {
     this.clearRoom();
     this.kind = kind;
     this.cleared = false;
-    const W = kind === 'boss' ? 28 : kind === 'treasure' ? 16 : pick([20, 22, 24]);
-    const D = kind === 'boss' ? 28 : kind === 'treasure' ? 16 : pick([20, 22, 24]);
+    const W = kind === 'boss' ? 44 : kind === 'treasure' ? 22 : pick([30, 34, 38]);
+    const D = kind === 'boss' ? 44 : kind === 'treasure' ? 22 : pick([30, 34, 38]);
     const hw = (this.hw = W / 2);
     const hd = (this.hd = D / 2);
 
@@ -282,10 +282,11 @@ export class Game {
         this.room.add(pillar);
         this.obstacles.push({ x, z, r: size.x * k * 0.65 * 0.5 });
       }
-      // 구석의 나무통과 상자
+      // 벽을 따라 놓인 나무통과 상자
       for (const [name, x, z, r] of [
         ['crates', -hw + 1.4, hd - 1.5, 1.0], ['barrel', hw - 1.2, hd - 1.3, 0.75], ['barrel', hw - 1.2, hd - 3.0, 0.75],
-        ['barrel', -hw + 1.2, -hd + 1.3, 0.75],
+        ['barrel', -hw + 1.2, -hd + 1.3, 0.75], ['crates', hw - 1.4, -hd + 1.6, 1.0], ['barrel', -hw + 1.2, 1.5, 0.75],
+        ['crates', hw - 1.4, -2, 1.0], ['barrel', -hw + 1.2, hd * 0.55, 0.75],
       ] as const) {
         const o = prop(name, 0.62);
         o.position.set(x, 0, z);
@@ -298,15 +299,15 @@ export class Game {
     for (const [i, sx] of [-1, 1].entries()) {
       const x = sx * hw * 0.6;
       const torch = prop('torch', 1.3);
-      torch.position.set(x, 2.6, -hd);
+      torch.position.set(x, 3.0, -hd);
       this.room.add(torch);
-      part(G.sphere, basic(0xffb347), [0.3, 0.42, 0.3], [x, 3.55, -hd + 0.6], this.room);
-      (i === 0 ? this.torchA : this.torchB).position.set(x, 3.4, -hd + 1.2);
-      part(G.plane, lam(ROOM_COLOR[kind]), [1.1, 2.4, 1], [sx * hw * 0.82, 3.6, -hd + 0.05], this.room);
+      part(G.sphere, basic(0xffb347), [0.3, 0.42, 0.3], [x, 3.95, -hd + 0.6], this.room);
+      (i === 0 ? this.torchA : this.torchB).position.set(x, 4.2, -hd + 2);
+      part(G.plane, lam(ROOM_COLOR[kind]), [1.1, 2.4, 1], [sx * hw * 0.82, 4.6, -hd + 0.05], this.room);
     }
 
     const options = backdrop ? [] : this.nextOptions();
-    options.forEach((k, i) => this.addDoor(k, options.length === 1 ? 0 : i === 0 ? -4 : 4));
+    options.forEach((k, i) => this.addDoor(k, options.length === 1 ? 0 : i === 0 ? -6 : 6));
 
     this.heroRoot.position.set(0, 0, hd - 2.5);
     this.yaw = this.targetYaw = Math.PI;
@@ -318,7 +319,7 @@ export class Game {
       this.heroRoot.visible = false;
     } else if (kind === 'treasure') {
       const choices = [...ITEMS].sort(() => Math.random() - 0.5).slice(0, 3);
-      choices.forEach((item, i) => this.addPedestal(item, (i - 1) * 4, -1));
+      choices.forEach((item, i) => this.addPedestal(item, (i - 1) * 5, -2));
       this.onCleared(false);
     } else {
       this.spawnEnemies(kind);
@@ -371,8 +372,8 @@ export class Game {
     if (kind === 'boss') {
       this.addEnemy('boss', 0, -this.hd * 0.4, 1);
       if (f >= 6) {
-        this.addEnemy('skeleton', -5, -2, 1);
-        this.addEnemy('skeleton', 5, -2, 1);
+        this.addEnemy('skeleton', -8, -4, 1);
+        this.addEnemy('skeleton', 8, -4, 1);
       }
       return;
     }
@@ -398,10 +399,10 @@ export class Game {
     const def = ENEMIES[kind];
     const boss = kind === 'boss';
     const actor =
-      kind === 'minion' ? new Actor('minion')
-      : kind === 'mage' ? new Actor('mage', { right: 'staff' })
-      : boss ? new Actor('warrior', { right: 'axe', left: 'shield', tint: 0xff8f7a })
-      : new Actor('warrior', { right: 'blade', left: 'shield' });
+      kind === 'minion' ? new Actor('brute', { tint: 0x9fb59a })
+      : kind === 'mage' ? new Actor('cultist', { right: 'staff', tint: 0xb48cff })
+      : boss ? new Actor('mannequin', { right: 'axe', tint: 0xb0382e })
+      : new Actor('mannequin', { right: 'blade', tint: 0x8a94a8 });
     const ms = MODEL_SCALE[kind];
     actor.root.scale.setScalar(ms);
     const root = new THREE.Group();
@@ -413,10 +414,10 @@ export class Game {
     this.disposers.push(() => actor.dispose());
     const lvl = this.floor - 1;
     const hp = def.hp * (1 + lvl * (boss ? 0.2 : 0.22)) * (scale > 1 ? 1.8 : 1);
-    // 땅에서 솟아오르는 등장 동작(원본 3.57초)을 빠르게 재생
-    const spawnSpeed = rand(2.6, 3.4);
-    actor.play('Spawn_Ground_Skeletons', { once: true, speed: spawnSpeed, fade: 0 });
+    // 위에서 뛰어내리며 등장한다
+    actor.play('Jump_Land', { once: true, speed: 1.6, fade: 0 });
     actor.update(0);
+    root.visible = false;
 
     const tele = part(G.circle, basic(0xff2a2a, 0.3), [1, 1, 1], [0, 0.05, 0], this.room);
     tele.rotation.x = -Math.PI / 2;
@@ -431,7 +432,7 @@ export class Game {
     const bar = new THREE.Sprite(this.barFg);
     barBg.scale.set(barW + 0.08, 0.2, 1);
     bar.scale.set(barW, 0.12, 1);
-    barBg.position.y = bar.position.y = 2.45 * ms + 0.25;
+    barBg.position.y = bar.position.y = 1.9 * ms + 0.25;
     barBg.visible = bar.visible = false;
     barBg.renderOrder = 10;
     bar.renderOrder = 11;
@@ -440,7 +441,7 @@ export class Game {
     this.enemies.push({
       kind, def, root, actor, hp, maxHp: hp,
       dmg: def.dmg * (1 + lvl * 0.14) * (scale > 1 ? 1.25 : 1),
-      r: def.radius * scale, state: 'spawn', attack: 'melee', t: 3.4 / spawnSpeed, cd: rand(0.3, 1.2),
+      r: def.radius * scale, state: 'spawn', attack: 'melee', t: rand(0.9, 1.5), cd: rand(0.3, 1.2),
       kx: 0, kz: 0, flash: 0, dx: 0, dz: 1, phase: rand(0, 6), scale, tele, line, bar, barBg, chargeHit: false,
     });
     if (boss) {
@@ -502,7 +503,7 @@ export class Game {
     this.camera.aspect = w / h;
     const portrait = w < h;
     this.camera.fov = portrait ? 72 : 55;
-    this.camDist = portrait ? 11.5 : 10;
+    this.camDist = portrait ? 10.5 : 8.5;
     this.camera.updateProjectionMatrix();
   }
 
@@ -510,7 +511,7 @@ export class Game {
     if (this.state === 'play') this.camYaw -= this.input.takeCamDX() * 0.006;
     const p = this.heroRoot.position;
     this.camTarget.lerp(this.tmp.set(p.x, 1.2, p.z), 1 - Math.exp(-10 * dt));
-    const pitch = 0.74;
+    const pitch = 0.6;
     const d = this.camDist;
     this.shake = Math.max(0, this.shake - dt * 2.5);
     const s = this.shake * 0.5;
@@ -570,7 +571,7 @@ export class Game {
       this.dodgeT = 0.28;
       this.dodgeCd = 0.85;
       this.atkT = 0;
-      this.hero.play('Dodge_Forward', { once: true, speed: 1.4, fade: 0.05 });
+      this.hero.play('Roll', { once: true, speed: 3.6, fade: 0.05 });
     }
 
     if (this.dodgeT > 0) {
@@ -602,7 +603,7 @@ export class Game {
     this.heroRoot.rotation.y = this.yaw;
     if (this.dodgeT <= 0 && this.atkT <= 0) {
       this.hero.release();
-      this.hero.play(moving ? 'Running_A' : 'Idle', { speed: moving ? s.speed / 6 * 1.25 : 1 });
+      this.hero.play(moving ? 'Jog_Fwd_Loop' : 'Sword_Idle', { speed: moving ? s.speed / 4.2 : 1 });
     }
     if (this.atkT > 0) {
       const q = 1 - this.atkT / this.atkDur;
@@ -623,8 +624,7 @@ export class Game {
     this.atkT = this.atkDur;
     this.atkCd = 0.42 / s.atkSpeed;
     this.atkHit = false;
-    const clip = this.atkCount++ % 2 ? '1H_Melee_Attack_Slice_Horizontal' : '1H_Melee_Attack_Slice_Diagonal';
-    this.hero.play(clip, { once: true, speed: 2.4 * s.atkSpeed, fade: 0.06 });
+    this.hero.play('Sword_Attack', { once: true, speed: 3.6 * s.atkSpeed, fade: 0.06 });
     // 가까운 적 쪽으로 자동 조준(모바일에서 방향 맞추기 쉽게)
     const pos = this.heroRoot.position;
     let best: Enemy | null = null;
@@ -672,7 +672,7 @@ export class Game {
     if (e.kind !== 'boss') {
       e.kx = nx * 4.5;
       e.kz = nz * 4.5;
-      if (e.state === 'chase') e.actor.play('Hit_A', { once: true, speed: 1.8, fade: 0.05 });
+      if (e.state === 'chase') e.actor.play('Hit_Chest', { once: true, speed: 1.2, fade: 0.05 });
     }
     const p = e.root.position;
     this.floatText(this.tmp.set(p.x, 1.6 * e.scale, p.z), String(Math.round(dmg)), crit ? 'crit' : '');
@@ -686,11 +686,11 @@ export class Game {
     this.room.remove(e.tele, e.line);
     e.root.remove(e.bar, e.barBg);
     for (const m of e.actor.mats) m.emissive.setRGB(0, 0, 0);
-    e.actor.play('Death_C_Skeletons', { once: true, speed: 1.5, fade: 0.05 });
-    this.corpses.push({ root: e.root, actor: e.actor, t: 2.2 });
+    e.actor.play('Death01', { once: true, speed: 1.8, fade: 0.05 });
+    this.corpses.push({ root: e.root, actor: e.actor, t: 2.6 });
     this.enemies.splice(this.enemies.indexOf(e), 1);
     this.kills++;
-    this.burst(p.x, 0.8, p.z, 0xe8e4d4, e.kind === 'boss' ? 30 : 10);
+    this.burst(p.x, 1.0, p.z, 0xd8d0c0, e.kind === 'boss' ? 30 : 10);
     if (this.stats.lifesteal > 0) this.heal(this.stats.lifesteal);
     if (e.kind === 'boss') $('boss').style.display = 'none';
     if (Math.random() < 0.18 || e.kind === 'boss') {
@@ -747,7 +747,14 @@ export class Game {
       }
       if (e.state === 'spawn') {
         e.t -= dt;
+        // 마지막 0.9초 동안: 0.3초 낙하 후 착지 동작
+        if (e.t < 0.9 && !e.root.visible) {
+          e.root.visible = true;
+          e.actor.play('Jump_Land', { once: true, speed: 1.6, fade: 0 });
+        }
+        pos.y = Math.max(0, (e.t - 0.6) * 22);
         if (e.t <= 0) {
+          pos.y = 0;
           e.state = 'chase';
           e.actor.release();
         }
@@ -793,8 +800,8 @@ export class Game {
             e.line.rotation.y = Math.atan2(nx, nz);
           }
         }
-        if (mv === 0) e.actor.play('Idle_Combat');
-        else e.actor.play(e.def.ranged ? 'Walking_A' : 'Running_A', { speed: e.def.ranged ? 1.5 : e.def.speed / 3 });
+        if (mv === 0) e.actor.play(e.kind === 'minion' ? 'Idle_Loop' : 'Sword_Idle');
+        else e.actor.play(e.def.ranged ? 'Walk_Loop' : 'Jog_Fwd_Loop', { speed: e.def.ranged ? 1.7 : e.def.speed / 3.2 / (boss ? 1.6 : 1) });
       } else if (e.state === 'windup') {
         e.t -= dt;
         const total = e.def.windup * (enraged ? 0.75 : 1);
@@ -825,7 +832,7 @@ export class Game {
             e.chargeHit = false;
             e.line.visible = false;
             e.actor.release();
-            e.actor.play('Running_A', { speed: 2.2 });
+            e.actor.play('Sprint_Loop', { speed: 1.3 });
           }
         }
       } else if (e.state === 'charge') {

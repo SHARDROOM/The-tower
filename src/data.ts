@@ -12,7 +12,7 @@ export interface Stats {
 export const baseStats = (): Stats => ({
   maxHp: 100,
   atk: 20,
-  speed: 6,
+  speed: 6.5,
   atkSpeed: 1,
   range: 1,
   crit: 0.05,
@@ -77,8 +77,8 @@ export interface EnemyDef {
 }
 
 export const ENEMIES: Record<EnemyKind, EnemyDef> = {
-  minion: { name: '해골 졸병', hp: 30, speed: 2.6, dmg: 11, radius: 0.5, range: 1.3, hitRadius: 1.7, windup: 0.45, recover: 0.5, cooldown: 1.0 },
-  skeleton: { name: '해골 병사', hp: 50, speed: 3.6, dmg: 15, radius: 0.45, range: 1.7, hitRadius: 2.1, windup: 0.5, recover: 0.6, cooldown: 1.2 },
-  mage: { name: '해골 마법사', hp: 35, speed: 2.6, dmg: 13, radius: 0.45, range: 9, hitRadius: 0, windup: 0.7, recover: 0.4, cooldown: 2.2, ranged: true },
+  minion: { name: '구울', hp: 30, speed: 2.6, dmg: 11, radius: 0.5, range: 1.3, hitRadius: 1.7, windup: 0.45, recover: 0.5, cooldown: 1.0 },
+  skeleton: { name: '강철 병사', hp: 50, speed: 3.6, dmg: 15, radius: 0.45, range: 1.7, hitRadius: 2.1, windup: 0.5, recover: 0.6, cooldown: 1.2 },
+  mage: { name: '암흑 사제', hp: 35, speed: 2.6, dmg: 13, radius: 0.45, range: 9, hitRadius: 0, windup: 0.7, recover: 0.4, cooldown: 2.2, ranged: true },
   boss: { name: '탑의 수호자', hp: 520, speed: 3, dmg: 22, radius: 1.5, range: 4, hitRadius: 4.4, windup: 0.9, recover: 0.8, cooldown: 1.4 },
 };

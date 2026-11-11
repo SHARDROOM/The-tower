@@ -25,7 +25,7 @@ npm run build    # 타입 검사 + dist/ 빌드
 - 한 층은 방 4개. 방을 정리하면 문이 열리고, 문 색과 글자로 다음 방 종류(전투 / 정예 / 보물)를 골라 들어간다.
 - 층의 마지막 방은 정예 방이고, 3층마다 보스 방이다. 정리하면 다음 층으로 가는 문이 열린다.
 - 전투 방을 정리하면 상자가 나온다(아이템 또는 물약, 정예·보스는 아이템 2개). 보물 방은 셋 중 하나를 고른다.
-- 몬스터: 해골 졸병, 해골 병사, 해골 마법사(원거리), 보스 "탑의 수호자"(내려찍기 · 탄막 · 돌진). 붉은 바닥 표시가 공격 예고.
+- 몬스터: 구울, 강철 병사, 암흑 사제(원거리), 보스 "탑의 수호자"(내려찍기 · 탄막 · 돌진). 붉은 바닥 표시가 공격 예고.
 - 층이 오를수록 몬스터의 체력·공격력·수가 늘고, 3층마다 탑의 색조가 바뀐다.
 
 ## 코드
@@ -41,12 +41,16 @@ npm run build    # 타입 검사 + dist/ 빌드
 
 ## 모델과 애니메이션
 
-캐릭터(기사, 해골 졸병·병사·마법사, 보스)와 던전 소품은 [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의
-Adventurers / Skeletons / Dungeon Remastered 팩을 사용한다. 라이선스는 CC0로, 상업적 이용을 포함해 자유롭게 쓸 수 있다.
+모두 CC0 라이선스라 상업적 이용을 포함해 자유롭게 쓸 수 있다.
 
-변환된 파일(`public/models/*.glb`, 합계 약 2MB)이 저장소에 들어 있어 따로 받을 필요는 없다.
-모델이나 애니메이션을 추가하려면 `github.com/KayKit-Game-Assets`의 세 저장소를 한 폴더에 clone 한 뒤
-`scripts/build-assets.mjs`의 목록을 고치고 `node scripts/build-assets.mjs <그 폴더>`를 실행한다.
+- 캐릭터(7~8등신)와 애니메이션: [Quaternius](https://quaternius.com)의 Universal Animation Library,
+  Modular Character Outfits – Fantasy, Universal Base Characters (무료 Standard 판).
+  모든 캐릭터가 같은 뼈대를 쓰므로 애니메이션은 `mannequin.glb` 한 벌을 공유한다.
+- 소품과 무기: [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의 Dungeon Remastered / Adventurers / Skeletons 팩.
+
+변환된 파일(`public/models/*.glb`, 합계 약 2.3MB)이 저장소에 들어 있어 따로 받을 필요는 없다.
+모델이나 애니메이션을 추가하려면 원본 팩을 받은 뒤 `scripts/build-assets.mjs`의 목록을 고치고
+`node scripts/build-assets.mjs <KayKit 폴더> <Quaternius 폴더>`를 실행한다(폴더 구성은 스크립트 머리말 참고).
 
 ## Android / iOS 빌드 (Capacitor)
 
