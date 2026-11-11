@@ -118,9 +118,11 @@ export class Game {
   private walk = 0;
 
   private camYaw = 0;
+  private camPitch = 0.42;
+  private camZoom = 1;
   private camTarget = new THREE.Vector3();
   private shake = 0;
-  private camDist = 8.5;
+  private camDist = 5.5;
 
   floor = 1;
   roomIdx = 0;
@@ -505,21 +507,26 @@ export class Game {
     this.camera.aspect = w / h;
     const portrait = w < h;
     this.camera.fov = portrait ? 72 : 55;
-    this.camDist = portrait ? 10.5 : 8.5;
+    this.camDist = portrait ? 7 : 5.5;
     this.camera.updateProjectionMatrix();
   }
 
   private updateCamera(dt: number) {
-    if (this.state === 'play') this.camYaw -= this.input.takeCamDX() * 0.006;
+    if (this.state === 'play') {
+      // 좌우는 제한 없이, 상하는 발밑에서 올려다보는 각도부터 머리 위에서 내려다보는 각도까지
+      this.camYaw -= this.input.takeCamDX() * 0.006;
+      this.camPitch = THREE.MathUtils.clamp(this.camPitch + this.input.takeCamDY() * 0.005, -0.2, 1.5);
+      this.camZoom = THREE.MathUtils.clamp(this.camZoom * 1.1 ** this.input.takeZoom(), 0.45, 2.2);
+    }
     const p = this.heroRoot.position;
-    this.camTarget.lerp(this.tmp.set(p.x, 1.2, p.z), 1 - Math.exp(-10 * dt));
-    const pitch = 0.6;
-    const d = this.camDist;
+    this.camTarget.lerp(this.tmp.set(p.x, 1.35, p.z), 1 - Math.exp(-10 * dt));
+    const pitch = this.state === 'menu' ? 0.5 : this.camPitch;
+    const d = this.camDist * (this.state === 'menu' ? 2 : this.camZoom);
     this.shake = Math.max(0, this.shake - dt * 2.5);
     const s = this.shake * 0.5;
     this.camera.position.set(
       this.camTarget.x + Math.sin(this.camYaw) * Math.cos(pitch) * d + rand(-s, s),
-      this.camTarget.y + Math.sin(pitch) * d + rand(-s, s),
+      Math.max(0.2, this.camTarget.y + Math.sin(pitch) * d + rand(-s, s)), // 바닥 아래로는 내려가지 않는다
       this.camTarget.z + Math.cos(this.camYaw) * Math.cos(pitch) * d,
     );
     this.camera.lookAt(this.camTarget);

@@ -5,6 +5,8 @@ export class Input {
   attack = false;
   private dodgeQueued = false;
   private camDX = 0;
+  private camDY = 0;
+  private zoom = 0;
   private keys = new Set<string>();
   private stickId = -1;
   private stickX = 0;
@@ -13,6 +15,7 @@ export class Input {
   private sy = 0;
   private lookId = -1;
   private lookX = 0;
+  private lookY = 0;
   private btnAttack = false;
 
   constructor(canvas: HTMLElement) {
@@ -34,6 +37,7 @@ export class Input {
       } else if (this.lookId < 0) {
         this.lookId = e.pointerId;
         this.lookX = e.clientX;
+        this.lookY = e.clientY;
       }
     });
     canvas.addEventListener('pointermove', (e) => {
@@ -50,7 +54,9 @@ export class Input {
         this.sy = -dy / R;
       } else if (e.pointerId === this.lookId) {
         this.camDX += e.clientX - this.lookX;
+        this.camDY += e.clientY - this.lookY;
         this.lookX = e.clientX;
+        this.lookY = e.clientY;
       }
     });
     const end = (e: PointerEvent) => {
@@ -95,7 +101,11 @@ export class Input {
       document.addEventListener(type, (e) => e.preventDefault());
     }
     // PC 에서 Ctrl + 휠/트랙패드 핀치로 페이지가 확대되는 것도 막는다
-    window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+    // 휠은 카메라 거리 조절에 쓴다. (Ctrl + 휠/트랙패드 핀치의 페이지 확대도 함께 막힌다)
+    window.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      if (!e.ctrlKey) this.zoom += Math.sign(e.deltaY);
+    }, { passive: false });
 
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
@@ -132,6 +142,20 @@ export class Input {
     return d;
   }
 
+  /** 시점 드래그의 세로 이동량(픽셀) */
+  takeCamDY() {
+    const d = this.camDY;
+    this.camDY = 0;
+    return d;
+  }
+
+  /** 휠 단계 수(+ 멀어짐, - 가까워짐) */
+  takeZoom() {
+    const z = this.zoom;
+    this.zoom = 0;
+    return z;
+  }
+
   takeCamDX() {
     const d = this.camDX;
     this.camDX = 0;
@@ -140,6 +164,6 @@ export class Input {
 
   reset() {
     this.dodgeQueued = false;
-    this.camDX = 0;
+    this.camDX = this.camDY = this.zoom = 0;
   }
 }
