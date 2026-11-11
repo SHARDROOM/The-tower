@@ -72,7 +72,9 @@ export class Game {
   private scene = new THREE.Scene();
   private camera = new THREE.PerspectiveCamera(55, 1, 0.1, 120);
   private timer = new THREE.Timer();
-  private input: Input;
+  readonly input: Input;
+  /** 설정창이 열려 있는 동안 게임 진행을 멈춘다 */
+  paused = false;
   private state: State = 'menu';
 
   private floorTex = stoneTexture();
@@ -474,7 +476,7 @@ export class Game {
     this.timer.update();
     const dt = Math.min(this.timer.getDelta(), 0.05);
     this.input.poll(dt);
-    if (this.state === 'play') {
+    if (this.state === 'play' && !this.paused) {
       this.updatePlayer(dt);
       this.updateEnemies(dt);
       this.updateProjectiles(dt);
@@ -512,7 +514,7 @@ export class Game {
   }
 
   private updateCamera(dt: number) {
-    if (this.state === 'play') {
+    if (this.state === 'play' && !this.paused) {
       // 좌우는 제한 없이, 상하는 발밑에서 올려다보는 각도부터 머리 위에서 내려다보는 각도까지
       this.camYaw -= this.input.takeCamDX() * 0.006;
       this.camPitch = THREE.MathUtils.clamp(this.camPitch + this.input.takeCamDY() * 0.005, -0.2, 1.5);

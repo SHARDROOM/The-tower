@@ -3,6 +3,8 @@ export class Input {
   moveX = 0;
   moveY = 0;
   attack = false;
+  /** 이동 조이스틱을 화면 오른쪽에서 잡는다(왼손잡이 배치) */
+  stickRight = false;
   private dodgeQueued = false;
   private camDX = 0;
   private camDY = 0;
@@ -25,7 +27,8 @@ export class Input {
 
     canvas.addEventListener('pointerdown', (e) => {
       canvas.setPointerCapture(e.pointerId);
-      const left = e.pointerType !== 'mouse' && e.clientX < window.innerWidth * 0.45;
+      const zone = this.stickRight ? e.clientX > window.innerWidth * 0.55 : e.clientX < window.innerWidth * 0.45;
+      const left = e.pointerType !== 'mouse' && zone;
       if (left && this.stickId < 0) {
         this.stickId = e.pointerId;
         this.stickX = e.clientX;
@@ -92,9 +95,10 @@ export class Input {
 
     // 모바일 브라우저의 확대 동작 차단. iOS Safari 는 viewport 의 user-scalable=no 를 무시하므로
     // 연타 시 더블탭 확대, 두 손가락 핀치 확대를 직접 막아야 한다. (포인터 이벤트는 그대로 온다)
-    const inMenu = (t: EventTarget | null) => t instanceof Element && !!t.closest('.screen');
+    const inMenu = (t: EventTarget | null) => t instanceof Element && !!t.closest('.screen, .ui');
     document.addEventListener('touchstart', (e) => { if (!inMenu(e.target)) e.preventDefault(); }, { passive: false });
-    document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    // 설정창 안에서는 한 손가락 끌기(슬라이더·스크롤)를 허용하고, 두 손가락 핀치만 막는다
+    document.addEventListener('touchmove', (e) => { if (!inMenu(e.target) || e.touches.length > 1) e.preventDefault(); }, { passive: false });
     document.addEventListener('touchend', (e) => { if (!inMenu(e.target)) e.preventDefault(); }, { passive: false });
     document.addEventListener('dblclick', (e) => e.preventDefault());
     for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {

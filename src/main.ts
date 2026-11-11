@@ -1,5 +1,6 @@
 import { loadAssets } from './assets';
 import { Game } from './game';
+import { Settings } from './settings';
 
 const start = document.getElementById('start') as HTMLButtonElement;
 start.disabled = true;
@@ -10,6 +11,7 @@ loadAssets((r) => (start.textContent = `불러오는 중… ${Math.round(r * 100
     const game = new Game(document.getElementById('c') as HTMLCanvasElement);
     // 콘솔 디버깅과 자동 테스트용 핸들
     (window as unknown as { game: Game }).game = game;
+    new Settings(game);
     start.textContent = '탑 오르기';
     start.disabled = false;
   })

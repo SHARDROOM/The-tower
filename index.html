@@ -87,9 +87,82 @@
         display: flex; align-items: center; justify-content: center; padding: 0;
       }
       .btn.down { background: rgba(242, 211, 138, 0.45); }
-      #btnAtk { width: 88px; height: 88px; font-size: 20px; right: calc(22px + var(--sar)); bottom: calc(26px + var(--sab)); }
-      #btnDodge { width: 64px; height: 64px; font-size: 15px; right: calc(122px + var(--sar)); bottom: calc(18px + var(--sab)); }
-      #btnDodge.cd { opacity: 0.4; }
+      /* 크기·투명도·위치는 설정창에서 바꾼다 (--btn-scale, --btn-opacity, .lefty, .placed) */
+      #hud { --btn-scale: 1; --btn-opacity: 1; }
+      #btnAtk, #btnDodge { opacity: var(--btn-opacity); }
+      #btnAtk {
+        width: calc(88px * var(--btn-scale)); height: calc(88px * var(--btn-scale)); font-size: calc(20px * var(--btn-scale));
+        right: calc(22px + var(--sar)); bottom: calc(26px + var(--sab));
+      }
+      #btnDodge {
+        width: calc(64px * var(--btn-scale)); height: calc(64px * var(--btn-scale)); font-size: calc(15px * var(--btn-scale));
+        right: calc(22px + 100px * var(--btn-scale) + var(--sar)); bottom: calc(18px + var(--sab));
+      }
+      #hud.lefty #btnAtk { right: auto; left: calc(22px + var(--sal)); }
+      #hud.lefty #btnDodge { right: auto; left: calc(22px + 100px * var(--btn-scale) + var(--sal)); }
+      #hud .btn.placed { right: auto; bottom: auto; transform: translate(-50%, -50%); }
+      #btnDodge.cd { opacity: calc(var(--btn-opacity) * 0.4); }
+      #hud.editing .btn { outline: 2px dashed var(--gold); outline-offset: 4px; opacity: 1; }
+      #btnSettings {
+        width: 40px; height: 40px; font-size: 20px; right: calc(12px + var(--sar)); top: calc(62px + var(--sat));
+      }
+      #hud.editing #btnSettings { display: none; }
+      #editBar {
+        position: fixed; top: calc(12px + var(--sat)); left: 50%; transform: translateX(-50%); display: none;
+        align-items: center; gap: 12px; padding: 8px 10px 8px 16px; border-radius: 12px; font-weight: 700; font-size: 14px;
+        background: rgba(12, 10, 18, 0.88); border: 1px solid rgba(242, 211, 138, 0.5); white-space: nowrap;
+      }
+      #editBar.show { display: flex; }
+      #editBar button { font: inherit; font-weight: 800; color: #1b1408; background: var(--gold); border: 0; border-radius: 8px; padding: 8px 16px; }
+
+      /* 두루마리 설정창: 위에서 내려오며 종이가 펼쳐진다 */
+      #settings {
+        position: fixed; inset: 0; display: flex; justify-content: center; align-items: flex-start;
+        background: rgba(6, 5, 10, 0); pointer-events: none; transition: background 0.4s; overflow: hidden;
+      }
+      #settings.open { background: rgba(6, 5, 10, 0.6); pointer-events: auto; }
+      .scroll {
+        width: min(86vw, 400px); margin-top: calc(10px + var(--sat)); color: #3b2a14;
+        transform: translateY(-140%); transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.3, 1);
+      }
+      #settings.open .scroll { transform: translateY(0); }
+      .rod {
+        position: relative; height: 22px; margin: 0 -14px; border-radius: 11px; z-index: 1;
+        background: linear-gradient(#a8743c, #6b4420 55%, #4a2d12); box-shadow: 0 3px 6px rgba(0, 0, 0, 0.5);
+      }
+      .rod::before, .rod::after {
+        content: ""; position: absolute; top: -3px; width: 14px; height: 28px; border-radius: 6px;
+        background: linear-gradient(#d9b25a, #8f6a22);
+      }
+      .rod::before { left: -4px; }
+      .rod::after { right: -4px; }
+      .paper {
+        display: grid; grid-template-rows: 0fr; transition: grid-template-rows 0.55s ease 0.25s; margin: -4px 0;
+        background: linear-gradient(90deg, #cdb078, #ecd9a6 12%, #f1e2b6 50%, #ecd9a6 88%, #cdb078);
+        box-shadow: inset 0 0 24px rgba(120, 80, 30, 0.35);
+      }
+      #settings.open .paper { grid-template-rows: 1fr; }
+      .paper > div { overflow: hidden; min-height: 0; }
+      .paper .inner { padding: 14px 20px 16px; max-height: calc(100vh - 90px - var(--sat) - var(--sab)); overflow-y: auto; }
+      .paper h2 { margin: 0 0 10px; text-align: center; font-size: 20px; letter-spacing: 0.3em; text-indent: 0.3em; }
+      .opt { margin: 10px 0; font-weight: 700; font-size: 14px; }
+      .opt label { display: flex; justify-content: space-between; margin-bottom: 4px; }
+      .opt input[type="range"] { width: 100%; accent-color: #7a4a1c; height: 26px; margin: 0; }
+      .row { display: flex; gap: 8px; }
+      .paper button {
+        flex: 1; font: inherit; font-weight: 800; font-size: 14px; color: #3b2a14; padding: 10px 6px; border-radius: 8px;
+        background: rgba(122, 74, 28, 0.12); border: 1.5px solid #7a4a1c; touch-action: manipulation;
+      }
+      .paper button.on, .paper button.primary { background: #7a4a1c; color: #f6e9c4; }
+      /* 가로로 눕힌 휴대폰처럼 높이가 낮으면 두 단으로 나눠 한 화면에 다 보이게 한다 */
+      @media (max-height: 520px) {
+        .scroll { width: min(90vw, 620px); }
+        .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; }
+        .paper .inner { padding: 10px 22px 12px; }
+        .paper h2 { margin-bottom: 4px; }
+        .opt { margin: 7px 0; }
+      }
+      .paper .hint { font-weight: 500; font-size: 12px; opacity: 0.8; margin-top: 4px; }
       #fade { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 0.25s; }
       #fade.on { opacity: 1; }
       .screen {
@@ -125,6 +198,37 @@
       <div id="stick"><div id="knob"></div></div>
       <button class="btn" id="btnDodge">구르기</button>
       <button class="btn" id="btnAtk">공격</button>
+      <button class="btn" id="btnSettings" aria-label="설정">⚙</button>
+    </div>
+    <div id="editBar" class="ui"><span>버튼을 끌어 원하는 곳에 놓으세요</span><button id="editDone">완료</button></div>
+    <div id="settings" class="ui">
+      <div class="scroll">
+        <div class="rod"></div>
+        <div class="paper"><div><div class="inner">
+          <h2>설정</h2>
+          <div class="cols"><div>
+          <div class="opt">
+            <label><span>버튼 크기</span><span id="valScale"></span></label>
+            <input type="range" id="optScale" min="60" max="160" step="5" />
+          </div>
+          <div class="opt">
+            <label><span>버튼 투명도</span><span id="valOpacity"></span></label>
+            <input type="range" id="optOpacity" min="20" max="100" step="5" />
+          </div>
+          </div><div>
+          <div class="opt">
+            <label><span>버튼 배치</span></label>
+            <div class="row"><button id="optRight">오른손</button><button id="optLeft">왼손</button></div>
+            <div class="hint">왼손: 버튼은 왼쪽, 이동 조작은 화면 오른쪽</div>
+          </div>
+          <div class="opt">
+            <div class="row"><button id="optEdit">버튼 직접 배치</button><button id="optReset">초기화</button></div>
+          </div>
+          <div class="opt"><div class="row"><button id="setClose" class="primary">닫기</button></div></div>
+          </div></div>
+        </div></div></div>
+        <div class="rod"></div>
+      </div>
     </div>
     <div id="fade"></div>
     <div id="menu" class="screen">
