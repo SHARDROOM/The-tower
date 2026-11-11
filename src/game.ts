@@ -40,9 +40,10 @@ const WALK_TILT = 0.6;
 // 달리다가 입력을 놓으면 급정거 동작이 나온다. 동작이 앞으로 미끄러지는 만큼(약 1.2) 실제로 밀려 나간다.
 const STOP_CLIP = 'sprint_exit_quaternius';
 const STOP_AFTER = 0.35;       // 이만큼(초) 이상 달린 뒤에 멈춰야 급정거한다
-// 구르기: 지속 시간(초, 이 동안 무적)과 이동 속도. 약 4m 를 구른다.
-const DODGE_TIME = 0.7;
-const DODGE_SPEED = 6;
+// 구르기: 지속 시간(초, 이 동안 무적)과 이동 속도. 이동 속도에 비례해 기본 이동 속도(5)일 때 초당 7,
+// 약 5.6 을 구른다. 이동 속도 아이템을 먹으면 구르기도 그만큼 빨라지고 멀리 간다.
+const DODGE_TIME = 0.8;
+const DODGE_SPEED_RATIO = 1.4;
 // [클립, 타격 순간(초)] — 예고 시간이 끝나는 순간에 타격 동작이 맞도록 재생 속도를 정한다
 const ATTACK_ANIM: Record<string, [string, number]> = {
   'minion.melee': ['Punch_Cross', 0.45],
@@ -631,8 +632,9 @@ export class Game {
 
     if (this.dodgeT > 0) {
       this.dodgeT -= dt;
-      pos.x += this.dodgeX * DODGE_SPEED * dt;
-      pos.z += this.dodgeZ * DODGE_SPEED * dt;
+      const dodgeSpeed = s.speed * DODGE_SPEED_RATIO;
+      pos.x += this.dodgeX * dodgeSpeed * dt;
+      pos.z += this.dodgeZ * dodgeSpeed * dt;
     } else {
       if (inp.attack && this.atkT <= 0) {
         this.cancelStop();
