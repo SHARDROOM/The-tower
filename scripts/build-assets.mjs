@@ -37,7 +37,6 @@ const jobs = [
   ['mannequin', join(quaternius, 'universal_animation_library/UAL1.glb'), { char: true, anims: ANIMS }],
   ['cultist', join(OUTFIT, 'Female_Ranger.gltf'), { char: true }],
   ['brute', join(quaternius, 'universal_base_characters/Base Characters/Superhero_Male_FullBody.gltf'), { char: true }],
-  ['sword', join(ADV, 'Assets/gltf/sword_1handed.gltf')],
   ['blade', join(SKE, 'Assets/gltf/Skeleton_Blade.gltf')],
   ['axe', join(SKE, 'Assets/gltf/Skeleton_Axe.gltf')],
   ['staff', join(SKE, 'Assets/gltf/Skeleton_Staff.gltf')],

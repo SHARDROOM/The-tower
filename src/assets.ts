@@ -26,7 +26,7 @@ function retargetable(clip: THREE.AnimationClip) {
 
 /** 무기를 쥐는 손 뼈(hand_r) 기준 자세. 쥔 주먹 위로 칼날이 서도록 맞춘 값이다. */
 const GRIP: Partial<Record<AssetName, { p: [number, number, number]; r: [number, number, number]; s: number }>> = {
-  sword: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.62 },
+  sword: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 1 },
   blade: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.7 },
   axe: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.8 },
   staff: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.8 },

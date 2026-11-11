@@ -39,6 +39,7 @@ npm run build    # 타입 검사 + dist/ 빌드
 | `src/models.ts` | 방 구조물·이펙트용 기본 도형과 절차적 텍스처 |
 | `src/input.ts` | 터치 조이스틱·버튼, 키보드·마우스 입력 |
 | `scripts/rig-character.mjs` | 뼈대 없는 인간형 모델에 공용 뼈대를 자동으로 심는 스크립트 |
+| `scripts/convert-weapon.mjs` | 세워진 무기 모델을 손에 쥘 수 있는 소품으로 변환하는 스크립트 |
 | `scripts/build-assets.mjs` | 원본 모델에서 필요한 것만 골라 압축해 `public/models/`에 넣는 변환 스크립트 |
 
 ## 모델과 애니메이션
@@ -51,6 +52,7 @@ npm run build    # 타입 검사 + dist/ 빌드
 - 주인공(검은 갑옷 기사): 직접 제공한 정지 모델에 `scripts/rig-character.mjs`로 공용 뼈대를 심은 것.
   다른 인간형 모델(A자/T자 자세, 정면이 +Z, 메시 한 덩어리)도
   `node scripts/rig-character.mjs <입력.glb> <이름>`으로 같은 애니메이션을 쓰게 만들 수 있다.
+- 주인공의 검: 직접 제공한 모델을 `scripts/convert-weapon.mjs`로 변환한 것.
 - 소품과 무기: [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의 Dungeon Remastered / Adventurers / Skeletons 팩.
 
 변환된 파일(`public/models/*.glb`, 합계 약 2.5MB)이 저장소에 들어 있어 따로 받을 필요는 없다.
