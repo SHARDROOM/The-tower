@@ -11,8 +11,8 @@ const NAMES = [
 ] as const;
 export type AssetName = (typeof NAMES)[number];
 
-const store = new Map<AssetName, { scene: THREE.Group }>();
-/** 모든 캐릭터가 같은 뼈대를 쓰므로 애니메이션 클립은 한 벌을 공유한다. */
+const store = new Map<AssetName, { scene: THREE.Group; clips?: THREE.AnimationClip[] }>();
+/** 공용 뼈대를 쓰는 캐릭터들이 함께 쓰는 클립. 자기 파일에 동작이 든 캐릭터(주인공)는 그것을 쓴다. */
 let clips: THREE.AnimationClip[] = [];
 
 /**
@@ -24,7 +24,7 @@ function retargetable(clip: THREE.AnimationClip) {
   return clip;
 }
 
-/** 무기를 쥐는 손 뼈(hand_r) 기준 자세. 쥔 주먹 위로 칼날이 서도록 맞춘 값이다. */
+/** 무기를 쥐는 손 뼈(공용 뼈대의 hand_r) 기준 자세. 쥔 주먹 위로 칼날이 서도록 맞춘 값이다. */
 const GRIP: Partial<Record<AssetName, { p: [number, number, number]; r: [number, number, number]; s: number }>> = {
   sword: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 1 },
   blade: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.7 },
@@ -53,6 +53,19 @@ function simplify(scene: THREE.Object3D) {
   });
 }
 
+/**
+ * Mixamo 오른손 뼈 기준 무기 자세. 이 뼈는 +X 가 엄지 쪽(칼날 방향), +Y 가 손가락 쪽, +Z 가 손바닥 쪽이라
+ * 무기의 날 방향(+Y)을 +X 로, 날의 넓은 면(X)을 손바닥 방향(+Z)으로 세운다.
+ */
+const MIXAMO_GRIP_ROT = new THREE.Euler().setFromRotationMatrix(
+  new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)),
+);
+const MIXAMO_GRIP = {
+  p: [0, 0.09, 0.03] as [number, number, number],
+  r: [MIXAMO_GRIP_ROT.x, MIXAMO_GRIP_ROT.y, MIXAMO_GRIP_ROT.z] as [number, number, number],
+  s: 1,
+};
+
 export async function loadAssets(onProgress: (ratio: number) => void) {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
@@ -61,8 +74,12 @@ export async function loadAssets(onProgress: (ratio: number) => void) {
     NAMES.map(async (name) => {
       const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}models/${name}.glb`);
       simplify(gltf.scene);
-      store.set(name, { scene: gltf.scene });
-      if (name === 'mannequin') clips = gltf.animations.map(retargetable);
+      if (name === 'mannequin') {
+        clips = gltf.animations.map(retargetable);
+        store.set(name, { scene: gltf.scene });
+      } else {
+        store.set(name, { scene: gltf.scene, clips: gltf.animations.length ? gltf.animations : undefined });
+      }
       onProgress(++done / NAMES.length);
     }),
   );
@@ -117,16 +134,18 @@ export class Actor {
       mesh.material = c;
     });
     if (opts.right) {
-      const g = GRIP[opts.right]!;
+      // 주인공은 Mixamo 뼈대라 손 뼈 이름과 축 방향이 다르다
+      const mixamoHand = this.root.getObjectByName('mixamorigRightHand');
+      const g = mixamoHand ? MIXAMO_GRIP : GRIP[opts.right]!;
       const weapon = prop(opts.right, g.s);
       weapon.name = 'weapon';
       weapon.position.set(...g.p);
       weapon.rotation.set(...g.r);
-      this.root.getObjectByName('hand_r')?.add(weapon);
+      (mixamoHand ?? this.root.getObjectByName('hand_r'))?.add(weapon);
     }
 
     this.mixer = new THREE.AnimationMixer(this.root);
-    for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
+    for (const clip of src.clips ?? clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.mixer.addEventListener('finished', () => (this.busy = false));
   }
 

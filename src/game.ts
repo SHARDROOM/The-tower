@@ -18,6 +18,10 @@ const ROOM_COLOR: Record<RoomKind, number> = {
 // 캐릭터 모델 배율(원본 키 약 1.8, 7~8등신)
 const MODEL_SCALE: Record<EnemyKind, number> = { minion: 1.0, skeleton: 1.08, mage: 1.0, boss: 2.1 };
 const HERO_SCALE = 1.05;
+// 주인공 공격 동작: [클립, 검이 가장 빠르게 움직이는 순간(초)]
+const HERO_ATTACKS: [string, number][] = [['Attack1', 0.6], ['Attack2', 0.82], ['Attack3', 0.43]];
+/** 공격 시간 중 타격 판정이 일어나는 지점(0~1) */
+const HIT_AT = 0.55;
 // [클립, 타격 순간(초)] — 예고 시간이 끝나는 순간에 타격 동작이 맞도록 재생 속도를 정한다
 const ATTACK_ANIM: Record<string, [string, number]> = {
   'minion.melee': ['Punch_Cross', 0.45],
@@ -103,6 +107,7 @@ export class Game {
   private heroRoot = new THREE.Group();
   private hero = new Actor('knight', { right: 'sword' });
   private slash = makeSlash();
+  private atkCount = 0;
   private stats: Stats = baseStats();
   private items: ItemDef[] = [];
   private hp = 100;
@@ -147,7 +152,7 @@ export class Game {
     // 검은 갑옷이 어두운 던전에 묻히지 않도록 밝기를 올린다
     for (const m of this.hero.mats) m.color.multiplyScalar(1.8);
     this.heroRoot.add(this.hero.root, this.slash.mesh);
-    this.hero.play('Sword_Idle');
+    this.hero.play('Idle');
     this.scene.add(sun, this.torchA, this.torchB, this.room, this.heroRoot);
 
     for (let i = 0; i < 48; i++) {
@@ -184,7 +189,7 @@ export class Game {
     this.heroRoot.visible = true;
     this.hero.release();
     this.hero.root.visible = true;
-    this.hero.play('Sword_Idle');
+    this.hero.play('Idle');
     $('menu').classList.add('hidden');
     $('dead').classList.add('hidden');
     this.input.reset();
@@ -227,7 +232,7 @@ export class Game {
     this.heroRoot.visible = true;
     this.slash.mesh.visible = false;
     this.hero.root.visible = true;
-    this.hero.play('Death01', { once: true, speed: 1.5 });
+    this.hero.play('Death', { once: true, speed: 1.3 });
     const best = Math.max(this.floor, Number(localStorage.getItem('tower.best') || 0));
     localStorage.setItem('tower.best', String(best));
     $('result').innerHTML = `도달: <b>${this.floor}층</b> · 처치: <b>${this.kills}</b><br/>최고 기록: ${best}층`;
@@ -582,7 +587,7 @@ export class Game {
       this.dodgeT = 0.28;
       this.dodgeCd = 0.85;
       this.atkT = 0;
-      this.hero.play('Roll', { once: true, speed: 3.6, fade: 0.05 });
+      this.hero.play('Dodge', { once: true, speed: 2.6, fade: 0.05 });
     }
 
     if (this.dodgeT > 0) {
@@ -601,7 +606,7 @@ export class Game {
 
     if (this.atkT > 0) {
       this.atkT -= dt;
-      if (!this.atkHit && this.atkDur - this.atkT >= this.atkDur * 0.5) this.strike();
+      if (!this.atkHit && this.atkDur - this.atkT >= this.atkDur * HIT_AT) this.strike();
     }
     this.collide(pos, 0.45);
 
@@ -614,11 +619,11 @@ export class Game {
     this.heroRoot.rotation.y = this.yaw;
     if (this.dodgeT <= 0 && this.atkT <= 0) {
       this.hero.release();
-      this.hero.play(moving ? 'Jog_Fwd_Loop' : 'Sword_Idle', { speed: moving ? s.speed / 4.2 : 1 });
+      this.hero.play(moving ? 'Run' : 'Idle', { speed: moving ? s.speed / 5.4 : 1 });
     }
     if (this.atkT > 0) {
       const q = 1 - this.atkT / this.atkDur;
-      this.slash.mesh.visible = q > 0.35;
+      this.slash.mesh.visible = q > HIT_AT - 0.1;
       this.slash.mat.opacity = 0.75 * (1 - q);
       const r = 2.7 * s.range;
       this.slash.mesh.scale.set(r, r, 1);
@@ -631,11 +636,13 @@ export class Game {
 
   private startAttack() {
     const s = this.stats;
-    this.atkDur = 0.3 / s.atkSpeed;
+    this.atkDur = 0.42 / s.atkSpeed;
     this.atkT = this.atkDur;
-    this.atkCd = 0.42 / s.atkSpeed;
+    this.atkCd = 0.52 / s.atkSpeed;
     this.atkHit = false;
-    this.hero.play('Sword_Attack', { once: true, speed: 3.6 * s.atkSpeed, fade: 0.06 });
+    // 세 가지 베기를 번갈아 쓴다. 동작에서 검이 가장 빠른 순간이 타격 판정 시점과 겹치도록 재생 속도를 맞춘다.
+    const [clip, swingAt] = HERO_ATTACKS[this.atkCount++ % HERO_ATTACKS.length];
+    this.hero.play(clip, { once: true, speed: swingAt / (this.atkDur * HIT_AT), fade: 0.06 });
     // 가까운 적 쪽으로 자동 조준(모바일에서 방향 맞추기 쉽게)
     const pos = this.heroRoot.position;
     let best: Enemy | null = null;

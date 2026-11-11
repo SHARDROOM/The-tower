@@ -54,9 +54,11 @@ npm run build    # 타입 검사 + dist/ 빌드
 - 캐릭터(7~8등신)와 애니메이션: [Quaternius](https://quaternius.com)의 Universal Animation Library,
   Modular Character Outfits – Fantasy, Universal Base Characters (무료 Standard 판).
   모든 캐릭터가 같은 뼈대를 쓰므로 애니메이션은 `mannequin.glb` 한 벌을 공유한다.
-- 주인공(검은 갑옷 기사): 직접 제공한 정지 모델에 `scripts/rig-character.mjs`로 공용 뼈대를 심은 것.
-  다른 인간형 모델(A자/T자 자세, 정면이 +Z, 메시 한 덩어리)도
-  `node scripts/rig-character.mjs <입력.glb> <이름>`으로 같은 애니메이션을 쓰게 만들 수 있다.
+- 주인공(검은 갑옷 기사): 직접 제공한 정지 모델에 `scripts/rig-character.mjs`로 뼈대를 심은 것.
+  Mixamo "Sword and Shield Pack"의 뼈대에 묶고 그 동작(대기·달리기·베기 3종·회피·피격·사망·방어)을 같은 파일에 담았다.
+  `node scripts/rig-character.mjs <입력.glb> <이름> --mixamo <팩 폴더>` (`--mixamo`를 빼면 공용 뼈대에 묶는다).
+  Mixamo 동작은 게임에 넣어 쓰는 것은 허용되지만 동작 파일 자체의 재배포는 Adobe 약관상 제한되므로,
+  원본 FBX 팩은 저장소에 넣지 않는다.
 - 주인공의 검: 직접 제공한 모델을 `scripts/convert-weapon.mjs`로 변환한 것.
 - 소품과 무기: [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의 Dungeon Remastered / Adventurers / Skeletons 팩.
 
