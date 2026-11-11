@@ -225,13 +225,17 @@ def V(*xyz):
 
 
 # ── 무게감 있는 달리기 ─────────────────────────────────────────────────────
-# 갑옷을 입은 느낌: 자세를 낮추고 상체를 숙인 채, 발을 낮게 들어 쿵쿵 내딛는다. 위아래 출렁임은 작게,
-# 대신 발을 디딜 때마다 골반이 묵직하게 내려앉는다. 검을 든 오른팔은 거의 고정하고 왼팔만 흔든다.
+# 참고 그림: 판금 갑옷 기사가 몸을 앞으로 크게 숙이고 투구를 앞세워 돌진하는 자세.
+# - 상체를 약 40° 숙이고 어깨를 둥글게 말아 머리가 앞으로 나간다. 시선은 앞을 향하되 투구는 살짝 숙인다.
+# - 검을 든 오른팔은 몸 옆으로 늘어뜨리고, 칼날은 앞쪽 아래로 비스듬히 내려 칼끝이 땅 가까이 간다.
+# - 왼팔은 앞쪽 아래로 늘어뜨려 손을 반쯤 편 채 걸음에 맞춰 흔든다(조깅처럼 팔을 접어 펌프질하지 않는다).
+# - 자세를 낮추고 보폭을 넓게, 앞으로 나가는 다리는 무릎을 높이 든다. 디딜 때마다 골반이 묵직하게 내려앉는다.
 RUN_SPEED = 3.6       # 게임 이동 속도(월드 단위/초). 디딘 발이 이 속도로 뒤로 가야 미끄러지지 않는다
-RUN_TIME = 0.70       # 두 걸음 한 주기(초)
-RUN_REACH = 0.215     # 발이 골반 앞뒤로 나가는 거리
+RUN_TIME = 0.74       # 두 걸음 한 주기(초)
+RUN_REACH = 0.235     # 발이 골반 앞뒤로 나가는 거리
 WORLD = 1.8 * 1.05    # 모델 단위 → 게임 월드 단위 (retarget.mjs 의 키 맞춤 × game.ts 의 HERO_SCALE)
-RUN_STANCE = (2 * RUN_REACH * WORLD / RUN_SPEED) / RUN_TIME   # 한 발이 땅에 닿아 있는 비율(약 0.32): 보폭 ÷ 속도
+RUN_STANCE = (2 * RUN_REACH * WORLD / RUN_SPEED) / RUN_TIME   # 한 발이 땅에 닿아 있는 비율(약 0.33): 보폭 ÷ 속도
+RUN_LEAN = 40         # 상체를 숙이는 정도(도). 골반과 척추 세 마디에 나눠 준다
 
 
 def run_foot(ph):
@@ -239,12 +243,13 @@ def run_foot(ph):
         u = ph / RUN_STANCE
         z = lerp(RUN_REACH, -RUN_REACH, u)
         lift = max(0.0, (u - 0.6) / 0.4)
-        toe_down = lerp(-12, 0, min(u / 0.18, 1)) if u < 0.6 else lerp(0, 32, lift)
+        toe_down = lerp(-12, 0, min(u / 0.18, 1)) if u < 0.6 else lerp(0, 36, lift)
         return Vector((0, 0.03 * lift, z)), toe_down
     u = (ph - RUN_STANCE) / (1 - RUN_STANCE)
-    z = lerp(-RUN_REACH, RUN_REACH, smooth(u))
-    y = 0.03 * (1 - u) + 0.075 * math.sin(math.pi * u) ** 1.3
-    toe_down = lerp(32, 48, u / 0.3) if u < 0.3 else lerp(48, -12, smooth((u - 0.3) / 0.7))
+    # 발을 뒤로 차 올린 뒤 무릎을 높이 들며 앞으로 가져온다
+    z = lerp(-RUN_REACH, RUN_REACH * 1.05, smooth(u))
+    y = 0.03 * (1 - u) + 0.11 * math.sin(math.pi * min(1.0, u * 1.15)) ** 1.2
+    toe_down = lerp(36, 52, u / 0.3) if u < 0.3 else lerp(52, -14, smooth((u - 0.3) / 0.7))
     return Vector((0, y, z)), toe_down
 
 
@@ -254,26 +259,31 @@ def run_pose(t):
     p = Pose()
     # 발을 디딘 직후(ph 0.1, 0.6)에 가장 낮다. 내려앉을 때는 빠르게, 올라올 때는 천천히.
     drop = math.cos(4 * math.pi * (ph - 0.11))
-    p.pelvis = Vector((0.010 * math.cos(2 * math.pi * (ph - 0.16)), -0.062 - 0.013 * drop - 0.004 * drop * abs(drop), 0.0))
-    p.yaw = -7 * c
-    p.pitch = 12
-    p.roll = 2.0 * math.sin(2 * math.pi * (ph - 0.05))
-    twist = aa(Y, 4.5 * c)
-    p.spine = [aa(X, 5) @ twist, aa(X, 5) @ twist, aa(X, 4) @ twist]
-    p.neck = aa(X, -7) @ aa(Y, -3 * c)
-    p.head = aa(X, -9) @ aa(Y, -3.5 * c)
+    p.pelvis = Vector((0.010 * math.cos(2 * math.pi * (ph - 0.16)), -0.072 - 0.014 * drop - 0.004 * drop * abs(drop), -0.012))
+    p.yaw = -8 * c
+    p.pitch = RUN_LEAN * 0.4 + 1.5 * drop
+    p.roll = 2.5 * math.sin(2 * math.pi * (ph - 0.05))
+    twist = aa(Y, 5 * c)
+    bend = RUN_LEAN * 0.6 / 3
+    # 등 위쪽을 더 굽혀 어깨가 앞으로 말린다
+    p.spine = [aa(X, bend * 0.8) @ twist, aa(X, bend) @ twist, aa(X, bend * 1.2) @ twist]
+    # 몸을 숙인 만큼 고개를 들어 앞을 보되, 투구는 15° 정도 숙인 채로 둔다
+    p.neck = aa(X, -(RUN_LEAN - 15) * 0.45) @ aa(Y, -3 * c)
+    p.head = aa(X, -(RUN_LEAN - 15) * 0.55) @ aa(Y, -3.5 * c)
     for s, shift in (('L', 0.0), ('R', 0.5)):
         off, toe_down = run_foot((ph + shift) % 1.0)
-        off.x = -0.012 * (1 if s == 'L' else -1)   # 발을 조금 모아 디딘다
+        off.x = -0.010 * (1 if s == 'L' else -1)   # 발을 조금 모아 디딘다
         p.foot[s] = (off, toe_down, 0.0)
-    # 왼팔: 오른발이 나갈 때 앞으로. 팔꿈치를 조깅처럼 바짝 접지 않고 반쯤만 굽혀 크게 흔든다.
-    p.arm['L'] = Arm(upper=aa(X, 24 * c - 2) @ aa(Z, -18), elbow=48 - 14 * c, grip=55)
-    # 오른팔: 검을 든 팔은 거의 편 채 몸 옆으로 늘어뜨리고, 칼날은 앞쪽 아래를 향하게 들고 달린다.
-    # 손은 어깨에서 아래·약간 앞·바깥으로(팔 길이 약 0.236 중 0.226) 두어 팔꿈치가 살짝만 굽는다.
-    # 걸음에 맞춰 손이 앞뒤로 조금 흔들리고, 칼끝은 그 반대로 살짝 까딱인다.
     p.aim = p.yaw
-    hand = V(-0.055, -0.212, 0.055 - 0.022 * c)
-    p.arm['R'] = Arm(reach=hand, hint=V(-0.25, 0.1, -1.0), blade=aa(Y, p.aim) @ V(0.16, -0.30 - 0.05 * c, 1.0), grip=65)
+    # 오른팔: 검을 든 팔을 몸 옆으로 늘어뜨린다(팔 길이 약 0.236 중 0.215, 팔꿈치는 살짝 굽음).
+    # 몸을 숙였으므로 어깨에서 거의 바로 아래가 골반 옆이다. 걸음에 맞춰 손이 앞뒤로 조금 흔들린다.
+    hand_r = V(-0.07, -0.20, 0.035 - 0.03 * c)
+    # 칼날: 앞쪽 아래로, 바깥으로 살짝 벌려 칼끝이 앞발 옆 땅 가까이 간다. 손이 흔들리는 반대로 까딱인다.
+    blade = aa(Y, p.aim) @ V(-0.22, -0.78 + 0.06 * c, 0.58)
+    p.arm['R'] = Arm(reach=hand_r, hint=V(-0.3, 0.1, -1.0), blade=blade, grip=68)
+    # 왼팔: 앞쪽 아래로 늘어뜨려 손을 반쯤 편다. 오른발이 나갈 때(c < 0 일 때 왼팔이 뒤) 앞으로.
+    hand_l = V(0.04, -0.175, 0.06 + 0.06 * c)   # 길이 0.18~0.22: 앞으로 흔들 때도 팔꿈치가 잠기지 않는다
+    p.arm['L'] = Arm(reach=hand_l, hint=V(0.35, 0.0, -1.0), hand=aa(X, -10), grip=28)
     return p
 
 
