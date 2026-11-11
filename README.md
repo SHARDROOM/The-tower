@@ -67,6 +67,9 @@ npm run build    # 타입 검사 + dist/ 빌드
   동작을 고치려면 그 파이썬 파일의 수치(보폭, 자세 높이, 공격의 시각별 손 위치 등)를 바꾸면 된다.
   고친 뒤에는 `node scripts/check-anim.mjs Heavy_Run --speed 3.6 --svg run.svg` 처럼 점검한다
   (`--speed`는 게임 이동 속도. 달리기 주기와 디딤 비율은 이 속도에서 발이 미끄러지지 않도록 계산돼 있다).
+- 주인공의 3단 베기 연속기(`Sword_-_slash_combo`)와 걷기·전력 질주 등 동작(`walk_*`, `sprint_*`)은 같은 뼈대로 만들어
+  직접 제공한 파일에서 그대로 가져온 것이다: `node scripts/retarget.mjs <리깅된 모델.glb> knight <동작 파일.glb ...>`.
+  반복 동작은 제자리 동작으로 바꾸고, 연속기는 앞으로 파고드는 이동(루트 모션)을 남겨 게임이 그만큼 캐릭터를 옮긴다.
 - 주인공의 검: 직접 제공한 모델을 `scripts/convert-weapon.mjs`로 변환한 것.
 - 소품과 무기: [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의 Dungeon Remastered / Adventurers / Skeletons 팩.
 

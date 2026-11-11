@@ -18,11 +18,17 @@ const ROOM_COLOR: Record<RoomKind, number> = {
 // 캐릭터 모델 배율(원본 키 약 1.8, 7~8등신)
 const MODEL_SCALE: Record<EnemyKind, number> = { minion: 1.0, skeleton: 1.08, mage: 1.0, boss: 2.1 };
 const HERO_SCALE = 1.05;
-// 주인공의 묵직한 내려베기. 준비가 길고 타격은 순간이라, 공격 시간의 뒤쪽(HIT_AT)에서 판정한다.
-const ATTACK_TIME = 0.62;      // 공격 한 번의 길이(초). 이 동안 거의 움직이지 못한다
-const ATTACK_COOLDOWN = 0.82;  // 다음 공격까지의 간격(초)
-const HIT_AT = 0.6;            // 공격 시간 중 타격 판정 지점(0~1)
-const ATTACK_CLIP_HIT = 0.66;  // Heavy_Attack 동작에서 검이 정면을 지나는 시각(초). scripts/check-anim.mjs 로 잰 값
+// 주인공의 3단 베기 연속기. 3초짜리 동작 하나("Sword_-_slash_combo")를 세 구간으로 나눠, 공격을 누를 때마다
+// 다음 구간으로 이어 간다. 구간이 끝날 때까지 다시 누르지 않으면 거기서 멈추고 대기 자세로 돌아간다.
+// hits: 검 끝이 가장 빠른 순간(scripts/check-anim.mjs 로 잰 값)과 그때의 피해 배율.
+// 동작이 앞으로 파고드는 만큼(루트 모션, 전체 약 2.3) 캐릭터가 실제로 앞으로 나간다.
+const COMBO_CLIP = 'Sword_-_slash_combo';
+const COMBO_SPEED = 1.1;
+const COMBO: { end: number; hits: [number, number][]; cancelAfter?: number }[] = [
+  { end: 0.47, hits: [[0.25, 1]] },                       // 1타: 비껴 베기
+  { end: 0.95, hits: [[0.72, 1.15]] },                    // 2타: 크게 내려베기
+  { end: 3.0, hits: [[1.15, 0.6], [1.53, 1.7]], cancelAfter: 2.05 }, // 3타: 뛰어올라 베고 내리찍기, 이후 일어서는 동작은 움직이면 끊는다
+];
 const RUN_CLIP_SPEED = 3.6;    // Heavy_Run 동작이 맞춰진 이동 속도. 이 속도일 때 디딘 발이 미끄러지지 않는다
 // 구르기: 지속 시간(초, 이 동안 무적)과 이동 속도. 약 4m 를 구른다.
 const DODGE_TIME = 0.7;
@@ -117,11 +123,15 @@ export class Game {
   private hp = 100;
   private yaw = Math.PI;
   private targetYaw = Math.PI;
-  private atkCd = 0;
-  private atkT = 0;
-  private atkDur = ATTACK_TIME;
+  private atkT = 0;          // 0 보다 크면 공격 중(연속기 진행 중)
   private hitStop = 0;
-  private atkHit = false;
+  private comboStage = -1;   // 진행 중인 구간 (-1 = 공격 안 함)
+  private comboHit = 0;      // 이번 구간에서 이미 판정한 타격 수
+  private comboQueued = false;
+  private slashT = 0;        // 검기 이펙트 남은 시간
+  private rootTrack: THREE.Interpolant | null = null;
+  private rootPrev = new THREE.Vector3();
+  private rootStart = new THREE.Vector3();
   private dodgeT = 0;
   private dodgeCd = 0;
   private dodgeX = 0;
@@ -501,6 +511,7 @@ export class Game {
       this.camYaw += dt * 0.15;
     }
     this.hero.update(dt);
+    if (this.state === 'play') this.applyRootMotion();
     for (const e of this.enemies) e.actor.update(dt);
     for (let i = this.corpses.length - 1; i >= 0; i--) {
       const c = this.corpses[i];
@@ -571,7 +582,6 @@ export class Game {
     const inp = this.input;
     const s = this.stats;
     const pos = this.heroRoot.position;
-    this.atkCd -= dt;
     this.dodgeCd -= dt;
     this.hurtT -= dt;
 
@@ -596,7 +606,7 @@ export class Game {
       this.targetYaw = Math.atan2(this.dodgeX, this.dodgeZ);
       this.dodgeT = DODGE_TIME;
       this.dodgeCd = 1.1;
-      this.atkT = 0;
+      this.endCombo(true);
       this.hero.play('Roll', { once: true, speed: 1.4 / DODGE_TIME, fade: 0.08 }); // 구르고 일어서는 앞부분 1.4초를 쓴다
     }
 
@@ -605,19 +615,17 @@ export class Game {
       pos.x += this.dodgeX * DODGE_SPEED * dt;
       pos.z += this.dodgeZ * DODGE_SPEED * dt;
     } else {
-      if (inp.attack && this.atkCd <= 0) this.startAttack();
-      const speed = s.speed * (this.atkT > 0 ? 0.12 : 1);
-      if (moving) {
+      if (inp.attack && this.atkT <= 0) this.startCombo();
+      // 공격 중에는 입력으로 움직이지 않는다(동작의 루트 모션이 캐릭터를 옮긴다)
+      const speed = this.atkT > 0 ? 0 : s.speed;
+      if (moving && speed > 0) {
         pos.x += wx * speed * dt;
         pos.z += wz * speed * dt;
         if (this.atkT <= 0) this.targetYaw = Math.atan2(wx, wz);
       }
     }
 
-    if (this.atkT > 0) {
-      this.atkT -= dt;
-      if (!this.atkHit && this.atkDur - this.atkT >= this.atkDur * HIT_AT) this.strike();
-    }
+    if (this.atkT > 0) this.updateCombo(moving);
     this.collide(pos, 0.45);
 
     // 회전 보간(가까운 쪽으로)
@@ -631,28 +639,19 @@ export class Game {
       this.hero.release();
       this.hero.play(moving ? 'Heavy_Run' : 'Sword_Idle', { speed: moving ? s.speed / RUN_CLIP_SPEED : 1, fade: 0.18 });
     }
-    if (this.atkT > 0) {
-      const q = 1 - this.atkT / this.atkDur;
-      this.slash.mesh.visible = q > HIT_AT - 0.08;
-      this.slash.mat.opacity = 0.75 * (1 - q);
+    this.slashT -= dt;
+    this.slash.mesh.visible = this.slashT > 0;
+    if (this.slashT > 0) {
+      this.slash.mat.opacity = 0.75 * (this.slashT / 0.16);
       const r = 2.7 * s.range;
       this.slash.mesh.scale.set(r, r, 1);
-    } else {
-      this.slash.mesh.visible = false;
     }
     this.hero.root.visible = !(this.hurtT > 0 && Math.floor(this.hurtT * 20) % 2 === 0);
     $('btnDodge').classList.toggle('cd', this.dodgeCd > 0);
   }
 
-  private startAttack() {
-    const s = this.stats;
-    this.atkDur = ATTACK_TIME / s.atkSpeed;
-    this.atkT = this.atkDur;
-    this.atkCd = ATTACK_COOLDOWN / s.atkSpeed;
-    this.atkHit = false;
-    // 동작에서 검이 목표를 지나는 순간이 타격 판정과 겹치도록 재생 속도를 맞춘다
-    this.hero.play('Heavy_Attack', { once: true, speed: ATTACK_CLIP_HIT / (this.atkDur * HIT_AT), fade: 0.1 });
-    // 가까운 적 쪽으로 자동 조준(모바일에서 방향 맞추기 쉽게)
+  /** 가까운 적 쪽으로 자동 조준(모바일에서 방향 맞추기 쉽게) */
+  private aimAtNearest() {
     const pos = this.heroRoot.position;
     let best: Enemy | null = null;
     let bestD = 5.5;
@@ -664,14 +663,94 @@ export class Game {
         best = e;
       }
     }
-    if (best) {
-      this.targetYaw = Math.atan2(best.root.position.x - pos.x, best.root.position.z - pos.z);
-      this.yaw = this.targetYaw;
+    if (best) this.targetYaw = Math.atan2(best.root.position.x - pos.x, best.root.position.z - pos.z);
+  }
+
+  private startCombo() {
+    const a = this.hero.action(COMBO_CLIP);
+    if (!a) return;
+    this.atkT = 1;
+    this.comboStage = 0;
+    this.comboHit = 0;
+    this.comboQueued = false;
+    this.hero.play(COMBO_CLIP, { once: true, speed: COMBO_SPEED * this.stats.atkSpeed, fade: 0.1 });
+    const track = a.getClip().tracks.find((t) => t.name === 'Pelvis.position');
+    this.rootTrack = track ? (track as unknown as { createInterpolant(): THREE.Interpolant }).createInterpolant() : null;
+    this.sampleRoot(0, this.rootStart);
+    this.rootPrev.copy(this.rootStart);
+    this.aimAtNearest();
+    this.yaw = this.targetYaw;
+  }
+
+  /** 연속기 진행: 타격 판정, 다음 구간 예약, 구간 끝에서 이어 가거나 멈추기 */
+  private updateCombo(moving: boolean) {
+    const a = this.hero.action(COMBO_CLIP)!;
+    const t = a.time;
+    const stage = COMBO[this.comboStage];
+    while (this.comboHit < stage.hits.length && t >= stage.hits[this.comboHit][0]) {
+      this.strike(stage.hits[this.comboHit][1]);
+      this.comboHit++;
+    }
+    // 첫 타격이 나간 뒤에 누른 공격은 다음 구간으로 이어 간다
+    if (this.input.attack && this.comboHit > 0 && this.comboStage < COMBO.length - 1) this.comboQueued = true;
+    const last = this.comboStage === COMBO.length - 1;
+    if (t >= stage.end - 1e-3 || (last && stage.cancelAfter !== undefined && t >= stage.cancelAfter && moving)) {
+      if (!last && this.comboQueued) {
+        this.comboStage++;
+        this.comboHit = 0;
+        this.comboQueued = false;
+        this.aimAtNearest();
+      } else {
+        this.endCombo(false);
+      }
     }
   }
 
-  private strike() {
-    this.atkHit = true;
+  /** 연속기를 끝낸다. 동작은 그 자세로 멈춘 채 다음 동작으로 부드럽게 넘어간다. */
+  private endCombo(immediate: boolean) {
+    if (this.atkT <= 0) return;
+    this.atkT = 0;
+    this.comboStage = -1;
+    const a = this.hero.action(COMBO_CLIP);
+    if (a) a.timeScale = 0;
+    this.hero.release();
+    if (!immediate) this.hero.play('Sword_Idle', { fade: 0.3 });
+  }
+
+  private sampleRoot(t: number, out: THREE.Vector3) {
+    if (!this.rootTrack) return out.set(0, 0, 0);
+    const v = this.rootTrack.evaluate(t);
+    return out.set(v[0], 0, v[2]);
+  }
+
+  /**
+   * 루트 모션: 연속기 동작의 골반이 앞뒤·좌우로 움직인 만큼 캐릭터를 실제로 옮기고, 모델은 그만큼 되돌려
+   * 제자리에 둔다. 동작이 다른 동작으로 넘어가며 흐려지는 동안에도 그 비율만큼 계속 상쇄한다.
+   */
+  private applyRootMotion() {
+    const a = this.hero.action(COMBO_CLIP);
+    const w = a ? a.getEffectiveWeight() : 0;
+    if (!a || !this.rootTrack || w <= 0) {
+      this.hero.root.position.set(0, 0, 0);
+      return;
+    }
+    // 모델 단위 → heroRoot 기준 단위 (Armature 배율 × 주인공 배율)
+    const k = (this.hero.root.getObjectByName('Armature')?.scale.x ?? 1) * HERO_SCALE;
+    const cur = this.sampleRoot(a.time, this.tmp.clone());
+    if (this.atkT > 0) {
+      const d = cur.clone().sub(this.rootPrev).multiplyScalar(k);
+      const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
+      this.heroRoot.position.x += d.x * c + d.z * sn;
+      this.heroRoot.position.z += -d.x * sn + d.z * c;
+      this.collide(this.heroRoot.position, 0.45);
+    }
+    this.rootPrev.copy(cur);
+    const off = cur.sub(this.rootStart).multiplyScalar(-k * w);
+    this.hero.root.position.set(off.x, 0, off.z);
+  }
+
+  private strike(mult = 1) {
+    this.slashT = 0.16;
     const s = this.stats;
     const pos = this.heroRoot.position;
     const fx = Math.sin(this.yaw);
@@ -687,7 +766,7 @@ export class Game {
       // 전방 약 130도 부채꼴. 몸이 겹칠 만큼 가까우면 각도와 무관하게 맞는다.
       if (d > e.r + 0.6 && (dx * fx + dz * fz) / d < 0.42) continue;
       const crit = Math.random() < s.crit;
-      this.damageEnemy(e, s.atk * rand(0.9, 1.1) * (crit ? 2 : 1), crit, dx / (d || 1), dz / (d || 1));
+      this.damageEnemy(e, s.atk * mult * rand(0.9, 1.1) * (crit ? 2 : 1), crit, dx / (d || 1), dz / (d || 1));
       hitAny = true;
     }
     if (hitAny) {

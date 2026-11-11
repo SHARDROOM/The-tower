@@ -159,6 +159,22 @@ if (gameSpeed) {
 let peak = { v: 0, t: 0 };
 for (let f = 1; f < n; f++) { const v = frames[f].tip.distanceTo(frames[f - 1].tip) / dt; if (v > peak.v) peak = { v, t: frames[f].t }; }
 console.log(`       검 끝 최고 속도 ${fmt(peak.v, 1)}/초, 시각 ${fmt(peak.t, 2)}초`);
+// 휘두름이 여러 번인 동작: 검 끝 속도가 크게 솟는 순간들(최고치의 35% 이상, 0.15초 이상 떨어진 봉우리)
+{
+  const sp = frames.map((fr, f) => (f ? fr.tip.distanceTo(frames[f - 1].tip) / dt : 0));
+  const sm = sp.map((_, f) => { let a = 0, c = 0; for (let k = f - 2; k <= f + 2; k++) if (sp[k] !== undefined) { a += sp[k]; c++; } return a / c; });
+  const peaks = [];
+  for (let f = 1; f < n - 1; f++) {
+    if (sm[f] < peak.v * 0.35 || sm[f] < sm[f - 1] || sm[f] < sm[f + 1]) continue;
+    const last = peaks[peaks.length - 1];
+    if (last && frames[f].t - last.t < 0.15) { if (sm[f] > last.v) peaks[peaks.length - 1] = { t: frames[f].t, v: sm[f] }; continue; }
+    peaks.push({ t: frames[f].t, v: sm[f] });
+  }
+  console.log(`       휘두름 봉우리: ${peaks.map((p) => `${fmt(p.t, 2)}초(${fmt(p.v, 0)})`).join(', ')}`);
+  // 골반이 앞으로 나간 거리(루트 모션)
+  const pz = frames.map((fr) => fr.p.Pelvis.z);
+  console.log(`       골반 앞뒤 위치: 처음 ${fmt(pz[0])}, 끝 ${fmt(pz[n - 1])}, 최대 ${fmt(Math.max(...pz))}`);
+}
 
 console.log(problems.length ? `  → 문제 ${problems.length}건: ${problems.join(', ')}` : '  → 문제 없음');
 

@@ -14,8 +14,8 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import sharp from 'sharp';
 import * as THREE from 'three';
 
-const [input, name] = process.argv.slice(2);
-if (!input || !name) throw new Error('usage: node scripts/retarget.mjs <rigged.glb> <name>');
+const [input, name, ...extra] = process.argv.slice(2);
+if (!input || !name) throw new Error('usage: node scripts/retarget.mjs <rigged.glb> <name> [같은 뼈대로 만든 동작 파일.glb ...]');
 const HEIGHT = 1.8;
 const FPS = 30;
 
@@ -221,7 +221,44 @@ for (const clipName of CLIPS) {
   console.log(`동작 ${clipName.padEnd(8)} ${clip.duration.toFixed(2)}초, ${frames}프레임`);
 }
 
-// ── 5. 이 모델 전용으로 직접 만든 동작 (scripts/blender/heavy_anims.py 가 만든 scripts/anim/*.json) ──
+// ── 5. 같은 뼈대로 만든 다른 파일의 동작을 그대로 가져온다 (뼈 이름과 기본 자세가 같으므로 변환이 필요 없다) ──
+// 회전은 모든 뼈, 위치는 골반만 가져온다. 반복 동작(이름에 loop·walk)은 골반의 앞뒤·좌우 이동(루트 모션)을 빼서
+// 제자리 동작으로 만들고, 나머지(베기 연속기처럼 앞으로 파고드는 동작)는 남겨 둔다: 게임이 그 이동을 읽어 캐릭터를 옮긴다.
+for (const file of extra) {
+  const other = await io.read(file);
+  const otherSkin = other.getRoot().listSkins()[0];
+  const names = otherSkin.listJoints().map((j) => j.getName()).join(',');
+  if (names !== skin.listJoints().map((j) => j.getName()).join(',')) throw new Error(`${file}: 뼈대가 다릅니다`);
+  for (const a of other.getRoot().listAnimations()) {
+    const anim = doc.createAnimation(a.getName());
+    for (const c of a.listChannels()) {
+      const bone = c.getTargetNode().getName();
+      const path = c.getTargetPath();
+      if (path === 'scale' || (path === 'translation' && bone !== 'Pelvis')) continue;
+      const sm = c.getSampler();
+      const times = Float32Array.from(sm.getInput().getArray());
+      const values = Float32Array.from(sm.getOutput().getArray());
+      if (path === 'translation' && /loop|walk/i.test(a.getName())) {
+        const n = values.length / 3;
+        const x0 = values[0], z0 = values[2];
+        const dx = values[(n - 1) * 3] - x0, dz = values[(n - 1) * 3 + 2] - z0;
+        for (let i = 0; i < n; i++) {
+          const t = n > 1 ? i / (n - 1) : 0;
+          values[i * 3] = pelvisRest[0] + values[i * 3] - x0 - dx * t;
+          values[i * 3 + 2] = pelvisRest[2] + values[i * 3 + 2] - z0 - dz * t;
+        }
+      }
+      const sampler = doc.createAnimationSampler()
+        .setInput(doc.createAccessor().setType('SCALAR').setArray(times).setBuffer(buffer))
+        .setOutput(doc.createAccessor().setType(path === 'rotation' ? 'VEC4' : 'VEC3').setArray(values).setBuffer(buffer))
+        .setInterpolation(sm.getInterpolation());
+      anim.addSampler(sampler).addChannel(doc.createAnimationChannel().setTargetNode(jointNodes.get(bone)).setTargetPath(path).setSampler(sampler));
+    }
+    console.log(`동작 ${a.getName()} (${file.split('/').pop()} 에서 가져옴)`);
+  }
+}
+
+// ── 6. 이 모델 전용으로 직접 만든 동작 (scripts/blender/heavy_anims.py 가 만든 scripts/anim/*.json) ──
 const ANIM_DIR = 'scripts/anim';
 for (const file of existsSync(ANIM_DIR) ? readdirSync(ANIM_DIR).filter((f) => f.endsWith('.json')).sort() : []) {
   const a = JSON.parse(readFileSync(`${ANIM_DIR}/${file}`, 'utf8'));

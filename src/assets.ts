@@ -188,6 +188,11 @@ export class Actor {
     this.busy = !!o.once;
   }
 
+  /** 이름으로 동작(AnimationAction)을 꺼낸다. 루트 모션처럼 재생 시각을 직접 읽어야 할 때 쓴다. */
+  action(name: string) {
+    return this.actions.get(name);
+  }
+
   /** 진행 중인 1회성 동작을 끊고 이동 애니메이션을 받을 수 있게 한다. */
   release() {
     this.busy = false;
