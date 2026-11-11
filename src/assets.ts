@@ -6,7 +6,7 @@ import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 // 캐릭터·애니메이션은 Quaternius, 소품·무기는 KayKit 팩(모두 CC0)에서 가져와
 // scripts/build-assets.mjs 로 변환한 것이다.
 const NAMES = [
-  'mannequin', 'ranger', 'cultist', 'brute', 'sword', 'blade', 'axe', 'staff',
+  'mannequin', 'knight', 'cultist', 'brute', 'sword', 'blade', 'axe', 'staff',
   'chest', 'pillar', 'column', 'torch', 'barrel', 'crates',
 ] as const;
 export type AssetName = (typeof NAMES)[number];

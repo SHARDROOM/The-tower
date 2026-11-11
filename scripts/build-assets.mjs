@@ -35,7 +35,6 @@ const ANIMS = [
 /** [출력 이름, 원본 경로, 옵션] — char: 리깅된 캐릭터(텍스처 축소·폴리곤 감소), anims: 남길 애니메이션 */
 const jobs = [
   ['mannequin', join(quaternius, 'universal_animation_library/UAL1.glb'), { char: true, anims: ANIMS }],
-  ['ranger', join(OUTFIT, 'Male_Ranger.gltf'), { char: true }],
   ['cultist', join(OUTFIT, 'Female_Ranger.gltf'), { char: true }],
   ['brute', join(quaternius, 'universal_base_characters/Base Characters/Superhero_Male_FullBody.gltf'), { char: true }],
   ['sword', join(ADV, 'Assets/gltf/sword_1handed.gltf')],

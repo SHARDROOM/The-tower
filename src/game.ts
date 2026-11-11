@@ -99,7 +99,7 @@ export class Game {
   private cleared = false;
 
   private heroRoot = new THREE.Group();
-  private hero = new Actor('ranger', { right: 'sword' });
+  private hero = new Actor('knight', { right: 'sword' });
   private slash = makeSlash();
   private stats: Stats = baseStats();
   private items: ItemDef[] = [];
@@ -140,6 +140,8 @@ export class Game {
     sun.position.set(4, 10, 6);
     blobShadow(0.45, this.heroRoot);
     this.hero.root.scale.setScalar(HERO_SCALE);
+    // 검은 갑옷이 어두운 던전에 묻히지 않도록 밝기를 올린다
+    for (const m of this.hero.mats) m.color.multiplyScalar(1.8);
     this.heroRoot.add(this.hero.root, this.slash.mesh);
     this.hero.play('Sword_Idle');
     this.scene.add(sun, this.torchA, this.torchB, this.room, this.heroRoot);
