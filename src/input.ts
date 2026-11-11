@@ -84,6 +84,19 @@ export class Input {
     hold('btnAtk', () => (this.btnAttack = true), () => (this.btnAttack = false));
     hold('btnDodge', () => (this.dodgeQueued = true), () => {});
 
+    // 모바일 브라우저의 확대 동작 차단. iOS Safari 는 viewport 의 user-scalable=no 를 무시하므로
+    // 연타 시 더블탭 확대, 두 손가락 핀치 확대를 직접 막아야 한다. (포인터 이벤트는 그대로 온다)
+    const inMenu = (t: EventTarget | null) => t instanceof Element && !!t.closest('.screen');
+    document.addEventListener('touchstart', (e) => { if (!inMenu(e.target)) e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+    document.addEventListener('touchend', (e) => { if (!inMenu(e.target)) e.preventDefault(); }, { passive: false });
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+    for (const type of ['gesturestart', 'gesturechange', 'gestureend']) {
+      document.addEventListener(type, (e) => e.preventDefault());
+    }
+    // PC 에서 Ctrl + 휠/트랙패드 핀치로 페이지가 확대되는 것도 막는다
+    window.addEventListener('wheel', (e) => { if (e.ctrlKey) e.preventDefault(); }, { passive: false });
+
     window.addEventListener('keydown', (e) => {
       if (e.repeat) return;
       this.keys.add(e.code);
