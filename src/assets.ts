@@ -54,25 +54,17 @@ function simplify(scene: THREE.Object3D) {
 }
 
 /**
- * 주인공 뼈대(R_Wrist 아래에 손가락 뼈가 있는 규격)의 오른손에 무기를 쥐여 준다.
- * 이 뼈대는 기본 자세의 뼈 회전이 0 이라, 손가락 뼈 위치로 손의 방향을 직접 구한다:
- * 손가락이 뻗은 방향과 엄지 방향에서 칼날이 설 방향과 손바닥 방향을 얻는다.
+ * Mixamo 오른손 뼈 기준 무기 자세. 이 뼈는 +X 가 엄지 쪽(칼날 방향), +Y 가 손가락 쪽, +Z 가 손바닥 쪽이라
+ * 무기의 날 방향(+Y)을 +X 로, 날의 넓은 면(X)을 손바닥 방향(+Z)으로 세운다.
  */
-function gripInHand(hand: THREE.Object3D, weapon: THREE.Object3D) {
-  const middle = hand.getObjectByName('R_Middle1');
-  const thumb = hand.getObjectByName('R_Thumb1');
-  if (!middle || !thumb) return;
-  const fingers = middle.position.clone().normalize();
-  // 칼날: 엄지 쪽이면서 손가락 방향과 직각
-  const blade = thumb.position.clone().addScaledVector(fingers, -thumb.position.dot(fingers)).normalize();
-  const palm = new THREE.Vector3().crossVectors(blade, fingers).normalize(); // 오른손 기준 손바닥 방향
-  // 무기의 날 방향(+Y)을 blade 로, 날의 넓은 면(X)을 손바닥 방향으로 세운다
-  const side = new THREE.Vector3().crossVectors(palm, blade);
-  weapon.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(palm, blade, side));
-  weapon.position.copy(middle.position).multiplyScalar(0.75).addScaledVector(palm, middle.position.length() * 0.35);
-  // 뼈대 전체가 배율로 감싸여 있으므로 무기 크기를 되돌린다
-  weapon.scale.divide(hand.getWorldScale(new THREE.Vector3()));
-}
+const MIXAMO_GRIP_ROT = new THREE.Euler().setFromRotationMatrix(
+  new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, 1), new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0)),
+);
+const MIXAMO_GRIP = {
+  p: [0, 0.09, 0.03] as [number, number, number],
+  r: [MIXAMO_GRIP_ROT.x, MIXAMO_GRIP_ROT.y, MIXAMO_GRIP_ROT.z] as [number, number, number],
+  s: 1,
+};
 
 export async function loadAssets(onProgress: (ratio: number) => void) {
   const loader = new GLTFLoader();
@@ -142,19 +134,14 @@ export class Actor {
       mesh.material = c;
     });
     if (opts.right) {
-      const weapon = prop(opts.right, GRIP[opts.right]!.s);
+      // 주인공은 Mixamo 뼈대라 손 뼈 이름과 축 방향이 다르다
+      const mixamoHand = this.root.getObjectByName('mixamorigRightHand');
+      const g = mixamoHand ? MIXAMO_GRIP : GRIP[opts.right]!;
+      const weapon = prop(opts.right, g.s);
       weapon.name = 'weapon';
-      const wrist = this.root.getObjectByName('R_Wrist');
-      if (wrist) {
-        wrist.add(weapon);
-        this.root.updateMatrixWorld(true);
-        gripInHand(wrist, weapon);
-      } else {
-        const g = GRIP[opts.right]!;
-        weapon.position.set(...g.p);
-        weapon.rotation.set(...g.r);
-        this.root.getObjectByName('hand_r')?.add(weapon);
-      }
+      weapon.position.set(...g.p);
+      weapon.rotation.set(...g.r);
+      (mixamoHand ?? this.root.getObjectByName('hand_r'))?.add(weapon);
     }
 
     this.mixer = new THREE.AnimationMixer(this.root);
