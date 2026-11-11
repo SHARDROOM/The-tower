@@ -12,7 +12,7 @@ export interface Stats {
 export const baseStats = (): Stats => ({
   maxHp: 100,
   atk: 20,
-  speed: 6.5,
+  speed: 4.5,
   atkSpeed: 1,
   range: 1,
   crit: 0.05,

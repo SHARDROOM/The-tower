@@ -18,6 +18,9 @@ const ROOM_COLOR: Record<RoomKind, number> = {
 // 캐릭터 모델 배율(원본 키 약 1.8, 7~8등신)
 const MODEL_SCALE: Record<EnemyKind, number> = { minion: 1.0, skeleton: 1.08, mage: 1.0, boss: 2.1 };
 const HERO_SCALE = 1.05;
+// 구르기: 지속 시간(초, 이 동안 무적)과 이동 속도. 약 4m 를 구른다.
+const DODGE_TIME = 0.7;
+const DODGE_SPEED = 6;
 // [클립, 타격 순간(초)] — 예고 시간이 끝나는 순간에 타격 동작이 맞도록 재생 속도를 정한다
 const ATTACK_ANIM: Record<string, [string, number]> = {
   'minion.melee': ['Punch_Cross', 0.45],
@@ -579,16 +582,16 @@ export class Game {
       this.dodgeX = moving ? wx / wl : Math.sin(this.yaw);
       this.dodgeZ = moving ? wz / wl : Math.cos(this.yaw);
       this.targetYaw = Math.atan2(this.dodgeX, this.dodgeZ);
-      this.dodgeT = 0.28;
-      this.dodgeCd = 0.85;
+      this.dodgeT = DODGE_TIME;
+      this.dodgeCd = 1.1;
       this.atkT = 0;
-      this.hero.play('Roll', { once: true, speed: 3.6, fade: 0.05 });
+      this.hero.play('Roll', { once: true, speed: 1.4 / DODGE_TIME, fade: 0.08 }); // 구르고 일어서는 앞부분 1.4초를 쓴다
     }
 
     if (this.dodgeT > 0) {
       this.dodgeT -= dt;
-      pos.x += this.dodgeX * 17 * dt;
-      pos.z += this.dodgeZ * 17 * dt;
+      pos.x += this.dodgeX * DODGE_SPEED * dt;
+      pos.z += this.dodgeZ * DODGE_SPEED * dt;
     } else {
       if (inp.attack && this.atkCd <= 0) this.startAttack();
       const speed = s.speed * (this.atkT > 0 ? 0.35 : 1);
