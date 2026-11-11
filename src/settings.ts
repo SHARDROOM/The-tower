@@ -19,6 +19,7 @@ const $ = (id: string) => document.getElementById(id)!;
 export class Settings {
   private cfg: Config = { ...DEFAULTS };
   private editing = false;
+  private closeTimer = 0;
 
   constructor(private game: Game) {
     try {
@@ -62,12 +63,24 @@ export class Settings {
   private open() {
     if (this.editing) return;
     this.game.paused = true;
-    $('settings').classList.add('open');
+    const el = $('settings');
+    // 닫히는 도중이거나 방금 닫힌 상태에서 다시 열어도 항상 말린 상태에서 시작하도록,
+    // 진행 중인 애니메이션을 지우고 레이아웃을 한 번 강제한 뒤 다시 건다.
+    clearTimeout(this.closeTimer);
+    el.classList.remove('open', 'closing');
+    void el.offsetWidth;
+    el.style.setProperty('--paper-h', `${(el.querySelector('.inner') as HTMLElement).offsetHeight}px`);
+    el.classList.add('open');
   }
 
-  private close() {
-    $('settings').classList.remove('open');
-    this.game.paused = false;
+  private close(resume = true) {
+    const el = $('settings');
+    if (!el.classList.contains('open')) return;
+    el.classList.remove('open');
+    el.classList.add('closing');
+    clearTimeout(this.closeTimer);
+    this.closeTimer = window.setTimeout(() => el.classList.remove('closing'), 360);
+    if (resume) this.game.paused = false;
   }
 
   private setHand(lefty: boolean) {
@@ -78,7 +91,7 @@ export class Settings {
   }
 
   private startEdit() {
-    $('settings').classList.remove('open');
+    this.close(false);
     this.editing = true;
     $('hud').classList.add('editing');
     $('editBar').classList.add('show');
