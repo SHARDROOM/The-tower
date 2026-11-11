@@ -22,8 +22,8 @@ const HERO_SCALE = 1.05;
 const ATTACK_TIME = 0.62;      // 공격 한 번의 길이(초). 이 동안 거의 움직이지 못한다
 const ATTACK_COOLDOWN = 0.82;  // 다음 공격까지의 간격(초)
 const HIT_AT = 0.6;            // 공격 시간 중 타격 판정 지점(0~1)
-const ATTACK_CLIP_HIT = 0.63;  // Heavy_Attack 동작에서 검이 목표를 지나는 시각(초)
-const RUN_CLIP_SPEED = 4;      // Heavy_Run 동작이 맞춰진 이동 속도
+const ATTACK_CLIP_HIT = 0.66;  // Heavy_Attack 동작에서 검이 정면을 지나는 시각(초). scripts/check-anim.mjs 로 잰 값
+const RUN_CLIP_SPEED = 3.6;    // Heavy_Run 동작이 맞춰진 이동 속도. 이 속도일 때 디딘 발이 미끄러지지 않는다
 // 구르기: 지속 시간(초, 이 동안 무적)과 이동 속도. 약 4m 를 구른다.
 const DODGE_TIME = 0.7;
 const DODGE_SPEED = 6;

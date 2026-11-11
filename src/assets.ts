@@ -68,9 +68,9 @@ function gripInHand(hand: THREE.Object3D, weapon: THREE.Object3D) {
   across.addScaledVector(fingers, -across.dot(fingers)).normalize();
   const palm = new THREE.Vector3().crossVectors(fingers, across); // 오른손 기준 손바닥 방향
   const blade = across.clone().negate(); // 엄지 쪽
-  // 무기의 날 방향(+Y)을 blade 로, 날의 넓은 면(X)을 손바닥 방향으로 세운다
-  const side = new THREE.Vector3().crossVectors(palm, blade);
-  weapon.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(palm, blade, side));
+  // 무기의 날 방향(+Y)을 blade 로 세운다. 검의 폭(X, 양쪽 날을 잇는 방향)은 손가락이 뻗은 쪽에 맞춘다:
+  // 손바닥은 손잡이의 납작한 면에 닿고, 날은 주먹이 나가는 쪽을 향한다.
+  weapon.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(fingers, blade, new THREE.Vector3().crossVectors(fingers, blade)));
   weapon.position.copy(middle.position).multiplyScalar(0.75).addScaledVector(palm, middle.position.length() * 0.35);
   // 뼈대 전체가 배율로 감싸여 있으므로 무기 크기를 되돌린다
   weapon.scale.divide(hand.getWorldScale(new THREE.Vector3()));
