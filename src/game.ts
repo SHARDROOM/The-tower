@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { Input } from './input';
 import { ENEMIES, ITEMS, POTION, baseStats, type EnemyDef, type EnemyKind, type ItemDef, type Stats } from './data';
-import { G, basic, brickTexture, labelSprite, lam, makeEnemy, makeKnight, part, stoneTexture, type KnightRig } from './models';
+import { Actor, prop, propSize } from './assets';
+import { G, basic, blobShadow, brickTexture, labelSprite, lam, makeSlash, part, stoneTexture } from './models';
 
 type RoomKind = 'combat' | 'elite' | 'treasure' | 'boss' | 'stairs';
 type State = 'menu' | 'play' | 'transition' | 'dead';
@@ -14,6 +15,17 @@ const ROOM_LABEL: Record<RoomKind, string> = {
 const ROOM_COLOR: Record<RoomKind, number> = {
   combat: 0xff8a4a, elite: 0xd04aff, treasure: 0xffd84a, boss: 0xff3030, stairs: 0x6ad0ff,
 };
+// 캐릭터 모델 배율(원본 키 약 2.3)
+const MODEL_SCALE: Record<EnemyKind, number> = { minion: 0.72, skeleton: 0.85, mage: 0.85, boss: 2.0 };
+// [클립, 타격 순간(초)] — 예고 시간이 끝나는 순간에 타격 동작이 맞도록 재생 속도를 정한다
+const ATTACK_ANIM: Record<string, [string, number]> = {
+  'minion.melee': ['Unarmed_Melee_Attack_Punch_A', 0.5],
+  'skeleton.melee': ['1H_Melee_Attack_Chop', 0.45],
+  'mage.shot': ['Spellcast_Shoot', 0.4],
+  'boss.melee': ['1H_Melee_Attack_Jump_Chop', 0.75],
+  'boss.burst': ['Spellcast_Summon', 1.6],
+  'boss.charge': ['Taunt', 0.9],
+};
 // 3개 층마다 탑의 분위기(바닥·벽 색조)가 바뀐다.
 const THEMES = [0xffffff, 0xb4d6a8, 0xe0a890, 0xa8bce8];
 
@@ -21,7 +33,7 @@ interface Enemy {
   kind: EnemyKind;
   def: EnemyDef;
   root: THREE.Group;
-  mats: THREE.MeshLambertMaterial[];
+  actor: Actor;
   hp: number;
   maxHp: number;
   dmg: number;
@@ -45,6 +57,7 @@ interface Enemy {
 }
 
 interface Projectile { mesh: THREE.Mesh; vx: number; vz: number; life: number; dmg: number }
+interface Corpse { root: THREE.Group; actor: Actor; t: number }
 interface Pickup { type: 'chest' | 'heal' | 'item'; obj: THREE.Object3D; item?: ItemDef; t: number; r: number }
 interface Door { kind: RoomKind; x: number; slab: THREE.Mesh; portal: THREE.Mesh; open: boolean }
 interface Particle { mesh: THREE.Mesh; mat: THREE.MeshBasicMaterial; vx: number; vy: number; vz: number; life: number }
@@ -77,13 +90,17 @@ export class Game {
   private obstacles: { x: number; z: number; r: number }[] = [];
   private enemies: Enemy[] = [];
   private projectiles: Projectile[] = [];
+  private corpses: Corpse[] = [];
   private pickups: Pickup[] = [];
   private doors: Door[] = [];
   private particles: Particle[] = [];
   private kind: RoomKind = 'combat';
   private cleared = false;
 
-  private rig: KnightRig = makeKnight();
+  private heroRoot = new THREE.Group();
+  private hero = new Actor('knight');
+  private slash = makeSlash();
+  private atkCount = 0;
   private stats: Stats = baseStats();
   private items: ItemDef[] = [];
   private hp = 100;
@@ -121,7 +138,11 @@ export class Game {
     this.scene.add(new THREE.HemisphereLight(0xaab4d8, 0x2a2018, 1.5));
     const sun = new THREE.DirectionalLight(0xfff0d8, 1.3);
     sun.position.set(4, 10, 6);
-    this.scene.add(sun, this.torchA, this.torchB, this.room, this.rig.root);
+    blobShadow(0.6, this.heroRoot);
+    this.hero.root.scale.setScalar(0.85);
+    this.heroRoot.add(this.hero.root, this.slash.mesh);
+    this.hero.play('Idle');
+    this.scene.add(sun, this.torchA, this.torchB, this.room, this.heroRoot);
 
     for (let i = 0; i < 48; i++) {
       const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -154,8 +175,10 @@ export class Game {
     this.floor = 1;
     this.roomIdx = 0;
     this.kills = 0;
-    this.rig.root.visible = true;
-    this.rig.root.rotation.set(0, 0, 0);
+    this.heroRoot.visible = true;
+    this.hero.release();
+    this.hero.root.visible = true;
+    this.hero.play('Idle');
     $('menu').classList.add('hidden');
     $('dead').classList.add('hidden');
     this.input.reset();
@@ -195,7 +218,10 @@ export class Game {
 
   private die() {
     this.state = 'dead';
-    this.rig.root.rotation.x = -Math.PI / 2;
+    this.heroRoot.visible = true;
+    this.slash.mesh.visible = false;
+    this.hero.root.visible = true;
+    this.hero.play('Death_A', { once: true });
     const best = Math.max(this.floor, Number(localStorage.getItem('tower.best') || 0));
     localStorage.setItem('tower.best', String(best));
     $('result').innerHTML = `도달: <b>${this.floor}층</b> · 처치: <b>${this.kills}</b><br/>최고 기록: ${best}층`;
@@ -210,6 +236,7 @@ export class Game {
     this.disposers = [];
     for (const p of this.projectiles) this.scene.remove(p.mesh);
     this.enemies = [];
+    this.corpses = [];
     this.projectiles = [];
     this.pickups = [];
     this.doors = [];
@@ -247,16 +274,33 @@ export class Game {
       for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
         const x = sx * px;
         const z = sz * pz;
-        part(G.cyl, lam(0x6a6672), [1.4, WALL_H, 1.4], [x, WALL_H / 2, z], this.room);
-        part(G.box, lam(0x55515c), [1.9, 0.5, 1.9], [x, 0.25, z], this.room);
-        this.obstacles.push({ x, z, r: 0.8 });
+        const size = propSize('pillar');
+        const k = WALL_H / size.y;
+        const pillar = prop('pillar');
+        pillar.scale.set(k * 0.65, k, k * 0.65); // 시야를 덜 가리도록 가늘게
+        pillar.position.set(x, 0, z);
+        this.room.add(pillar);
+        this.obstacles.push({ x, z, r: size.x * k * 0.65 * 0.5 });
+      }
+      // 구석의 나무통과 상자
+      for (const [name, x, z, r] of [
+        ['crates', -hw + 1.4, hd - 1.5, 1.0], ['barrel', hw - 1.2, hd - 1.3, 0.75], ['barrel', hw - 1.2, hd - 3.0, 0.75],
+        ['barrel', -hw + 1.2, -hd + 1.3, 0.75],
+      ] as const) {
+        const o = prop(name, 0.62);
+        o.position.set(x, 0, z);
+        o.rotation.y = rand(0, 6);
+        this.room.add(o);
+        this.obstacles.push({ x, z, r });
       }
     }
     // 횃불과 깃발
     for (const [i, sx] of [-1, 1].entries()) {
       const x = sx * hw * 0.6;
-      part(G.box, lam(0x3a2a1a), [0.14, 0.7, 0.14], [x, 2.7, -hd + 0.15], this.room);
-      part(G.sphere, basic(0xffb347), [0.36, 0.46, 0.36], [x, 3.25, -hd + 0.2], this.room);
+      const torch = prop('torch', 1.3);
+      torch.position.set(x, 2.6, -hd);
+      this.room.add(torch);
+      part(G.sphere, basic(0xffb347), [0.3, 0.42, 0.3], [x, 3.55, -hd + 0.6], this.room);
       (i === 0 ? this.torchA : this.torchB).position.set(x, 3.4, -hd + 1.2);
       part(G.plane, lam(ROOM_COLOR[kind]), [1.1, 2.4, 1], [sx * hw * 0.82, 3.6, -hd + 0.05], this.room);
     }
@@ -264,14 +308,14 @@ export class Game {
     const options = backdrop ? [] : this.nextOptions();
     options.forEach((k, i) => this.addDoor(k, options.length === 1 ? 0 : i === 0 ? -4 : 4));
 
-    this.rig.root.position.set(0, 0, hd - 2.5);
+    this.heroRoot.position.set(0, 0, hd - 2.5);
     this.yaw = this.targetYaw = Math.PI;
     this.camYaw = 0;
     this.atkT = this.dodgeT = 0;
-    this.camTarget.copy(this.rig.root.position);
+    this.camTarget.copy(this.heroRoot.position);
 
     if (backdrop) {
-      this.rig.root.visible = false;
+      this.heroRoot.visible = false;
     } else if (kind === 'treasure') {
       const choices = [...ITEMS].sort(() => Math.random() - 0.5).slice(0, 3);
       choices.forEach((item, i) => this.addPedestal(item, (i - 1) * 4, -1));
@@ -301,7 +345,7 @@ export class Game {
   private addPedestal(item: ItemDef, x: number, z: number) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
-    part(G.cyl, lam(0x55515c), [1.1, 0.9, 1.1], [0, 0.45, 0], g);
+    g.add(prop('column', 0.8));
     const gem = part(G.box, lam(item.color, 0x333333), [0.5, 0.5, 0.5], [0, 1.5, 0], g);
     gem.rotation.set(0.6, 0, 0.6);
     gem.name = 'gem';
@@ -317,9 +361,7 @@ export class Game {
   private addChest(x: number, z: number) {
     const g = new THREE.Group();
     g.position.set(x, 0, z);
-    part(G.box, lam(0x7a4e22), [1.2, 0.7, 0.8], [0, 0.35, 0], g);
-    part(G.box, lam(0xd9a93a, 0x332200), [1.26, 0.22, 0.86], [0, 0.78, 0], g);
-    part(G.box, lam(0xf2d38a, 0x554400), [0.2, 0.3, 0.1], [0, 0.6, 0.42], g);
+    g.add(prop('chest', 0.75));
     this.room.add(g);
     this.pickups.push({ type: 'chest', obj: g, t: 0, r: 1.3 });
   }
@@ -335,9 +377,9 @@ export class Game {
       return;
     }
     const pool: EnemyKind[] =
-      f === 1 ? ['slime', 'slime', 'slime', 'skeleton']
-      : f < 4 ? ['slime', 'slime', 'skeleton', 'skeleton', 'mage']
-      : ['slime', 'skeleton', 'skeleton', 'mage', 'mage'];
+      f === 1 ? ['minion', 'minion', 'minion', 'skeleton']
+      : f < 4 ? ['minion', 'minion', 'skeleton', 'skeleton', 'mage']
+      : ['minion', 'skeleton', 'skeleton', 'mage', 'mage'];
     const elite = kind === 'elite';
     const count = Math.min(10, 3 + Math.floor(f * 0.7) + (this.roomIdx > 0 ? 1 : 0) + (elite ? 1 : 0));
     for (let i = 0; i < count; i++) {
@@ -354,14 +396,27 @@ export class Game {
 
   private addEnemy(kind: EnemyKind, x: number, z: number, scale: number) {
     const def = ENEMIES[kind];
-    const model = makeEnemy(kind);
-    const lvl = this.floor - 1;
     const boss = kind === 'boss';
+    const actor =
+      kind === 'minion' ? new Actor('minion')
+      : kind === 'mage' ? new Actor('mage', { right: 'staff' })
+      : boss ? new Actor('warrior', { right: 'axe', left: 'shield', tint: 0xff8f7a })
+      : new Actor('warrior', { right: 'blade', left: 'shield' });
+    const ms = MODEL_SCALE[kind];
+    actor.root.scale.setScalar(ms);
+    const root = new THREE.Group();
+    blobShadow(def.radius * 1.1, root);
+    root.add(actor.root);
+    root.position.set(x, 0, z);
+    root.scale.setScalar(scale);
+    this.room.add(root);
+    this.disposers.push(() => actor.dispose());
+    const lvl = this.floor - 1;
     const hp = def.hp * (1 + lvl * (boss ? 0.2 : 0.22)) * (scale > 1 ? 1.8 : 1);
-    model.root.position.set(x, 0, z);
-    model.root.scale.setScalar(0.01);
-    this.room.add(model.root);
-    this.disposers.push(() => model.mats.forEach((m) => m.dispose()));
+    // 땅에서 솟아오르는 등장 동작(원본 3.57초)을 빠르게 재생
+    const spawnSpeed = rand(2.6, 3.4);
+    actor.play('Spawn_Ground_Skeletons', { once: true, speed: spawnSpeed, fade: 0 });
+    actor.update(0);
 
     const tele = part(G.circle, basic(0xff2a2a, 0.3), [1, 1, 1], [0, 0.05, 0], this.room);
     tele.rotation.x = -Math.PI / 2;
@@ -376,16 +431,16 @@ export class Game {
     const bar = new THREE.Sprite(this.barFg);
     barBg.scale.set(barW + 0.08, 0.2, 1);
     bar.scale.set(barW, 0.12, 1);
-    barBg.position.y = bar.position.y = model.height + 0.35;
+    barBg.position.y = bar.position.y = 2.45 * ms + 0.25;
     barBg.visible = bar.visible = false;
     barBg.renderOrder = 10;
     bar.renderOrder = 11;
-    model.root.add(barBg, bar);
+    root.add(barBg, bar);
 
     this.enemies.push({
-      kind, def, root: model.root, mats: model.mats, hp, maxHp: hp,
+      kind, def, root, actor, hp, maxHp: hp,
       dmg: def.dmg * (1 + lvl * 0.14) * (scale > 1 ? 1.25 : 1),
-      r: def.radius * scale, state: 'spawn', attack: 'melee', t: rand(0.4, 0.9), cd: rand(0.3, 1.2),
+      r: def.radius * scale, state: 'spawn', attack: 'melee', t: 3.4 / spawnSpeed, cd: rand(0.3, 1.2),
       kx: 0, kz: 0, flash: 0, dx: 0, dz: 1, phase: rand(0, 6), scale, tele, line, bar, barBg, chargeHit: false,
     });
     if (boss) {
@@ -423,6 +478,18 @@ export class Game {
     } else if (this.state === 'menu') {
       this.camYaw += dt * 0.15;
     }
+    this.hero.update(dt);
+    for (const e of this.enemies) e.actor.update(dt);
+    for (let i = this.corpses.length - 1; i >= 0; i--) {
+      const c = this.corpses[i];
+      c.actor.update(dt);
+      c.t -= dt;
+      if (c.t < 0.4) c.root.position.y -= dt * 2.5; // 바닥으로 가라앉으며 사라진다
+      if (c.t <= 0) {
+        this.room.remove(c.root);
+        this.corpses.splice(i, 1);
+      }
+    }
     this.updateParticles(dt);
     this.updateCamera(dt);
     this.renderer.render(this.scene, this.camera);
@@ -441,7 +508,7 @@ export class Game {
 
   private updateCamera(dt: number) {
     if (this.state === 'play') this.camYaw -= this.input.takeCamDX() * 0.006;
-    const p = this.rig.root.position;
+    const p = this.heroRoot.position;
     this.camTarget.lerp(this.tmp.set(p.x, 1.2, p.z), 1 - Math.exp(-10 * dt));
     const pitch = 0.74;
     const d = this.camDist;
@@ -476,7 +543,7 @@ export class Game {
   private updatePlayer(dt: number) {
     const inp = this.input;
     const s = this.stats;
-    const pos = this.rig.root.position;
+    const pos = this.heroRoot.position;
     this.atkCd -= dt;
     this.dodgeCd -= dt;
     this.hurtT -= dt;
@@ -503,6 +570,7 @@ export class Game {
       this.dodgeT = 0.28;
       this.dodgeCd = 0.85;
       this.atkT = 0;
+      this.hero.play('Dodge_Forward', { once: true, speed: 1.4, fade: 0.05 });
     }
 
     if (this.dodgeT > 0) {
@@ -521,7 +589,7 @@ export class Game {
 
     if (this.atkT > 0) {
       this.atkT -= dt;
-      if (!this.atkHit && this.atkDur - this.atkT >= this.atkDur * 0.3) this.strike();
+      if (!this.atkHit && this.atkDur - this.atkT >= this.atkDur * 0.5) this.strike();
     }
     this.collide(pos, 0.45);
 
@@ -531,28 +599,21 @@ export class Game {
     this.yaw += dy * Math.min(1, dt * 18);
 
     // 애니메이션
-    const rig = this.rig;
-    rig.root.rotation.y = this.yaw;
-    this.walk += dt * (moving ? 13 : 0);
-    const swing = moving && this.dodgeT <= 0 ? Math.sin(this.walk) * 0.7 : 0;
-    rig.legL.rotation.x = swing;
-    rig.legR.rotation.x = -swing;
-    rig.root.position.y = this.dodgeT > 0 ? 0.25 : 0;
-    rig.torso.rotation.x = this.dodgeT > 0 ? 0.9 : moving ? 0.12 : 0;
+    this.heroRoot.rotation.y = this.yaw;
+    if (this.dodgeT <= 0 && this.atkT <= 0) {
+      this.hero.release();
+      this.hero.play(moving ? 'Running_A' : 'Idle', { speed: moving ? s.speed / 6 * 1.25 : 1 });
+    }
     if (this.atkT > 0) {
       const q = 1 - this.atkT / this.atkDur;
-      rig.torso.rotation.y = THREE.MathUtils.lerp(1.0, -1.0, q * q * (3 - 2 * q));
-      rig.armR.rotation.x = -1.5;
-      rig.slash.visible = q > 0.15;
-      rig.slashMat.opacity = 0.75 * (1 - q);
+      this.slash.mesh.visible = q > 0.35;
+      this.slash.mat.opacity = 0.75 * (1 - q);
       const r = 2.7 * s.range;
-      rig.slash.scale.set(r, r, 1);
+      this.slash.mesh.scale.set(r, r, 1);
     } else {
-      rig.torso.rotation.y *= 0.7;
-      rig.armR.rotation.x = -0.35 - swing * 0.4;
-      rig.slash.visible = false;
+      this.slash.mesh.visible = false;
     }
-    rig.root.visible = !(this.hurtT > 0 && Math.floor(this.hurtT * 20) % 2 === 0);
+    this.hero.root.visible = !(this.hurtT > 0 && Math.floor(this.hurtT * 20) % 2 === 0);
     $('btnDodge').classList.toggle('cd', this.dodgeCd > 0);
   }
 
@@ -562,8 +623,10 @@ export class Game {
     this.atkT = this.atkDur;
     this.atkCd = 0.42 / s.atkSpeed;
     this.atkHit = false;
+    const clip = this.atkCount++ % 2 ? '1H_Melee_Attack_Slice_Horizontal' : '1H_Melee_Attack_Slice_Diagonal';
+    this.hero.play(clip, { once: true, speed: 2.4 * s.atkSpeed, fade: 0.06 });
     // 가까운 적 쪽으로 자동 조준(모바일에서 방향 맞추기 쉽게)
-    const pos = this.rig.root.position;
+    const pos = this.heroRoot.position;
     let best: Enemy | null = null;
     let bestD = 5.5;
     for (const e of this.enemies) {
@@ -583,7 +646,7 @@ export class Game {
   private strike() {
     this.atkHit = true;
     const s = this.stats;
-    const pos = this.rig.root.position;
+    const pos = this.heroRoot.position;
     const fx = Math.sin(this.yaw);
     const fz = Math.cos(this.yaw);
     const range = 2.7 * s.range;
@@ -609,6 +672,7 @@ export class Game {
     if (e.kind !== 'boss') {
       e.kx = nx * 4.5;
       e.kz = nz * 4.5;
+      if (e.state === 'chase') e.actor.play('Hit_A', { once: true, speed: 1.8, fade: 0.05 });
     }
     const p = e.root.position;
     this.floatText(this.tmp.set(p.x, 1.6 * e.scale, p.z), String(Math.round(dmg)), crit ? 'crit' : '');
@@ -619,10 +683,14 @@ export class Game {
 
   private killEnemy(e: Enemy) {
     const p = e.root.position;
-    this.room.remove(e.root, e.tele, e.line);
+    this.room.remove(e.tele, e.line);
+    e.root.remove(e.bar, e.barBg);
+    for (const m of e.actor.mats) m.emissive.setRGB(0, 0, 0);
+    e.actor.play('Death_C_Skeletons', { once: true, speed: 1.5, fade: 0.05 });
+    this.corpses.push({ root: e.root, actor: e.actor, t: 2.2 });
     this.enemies.splice(this.enemies.indexOf(e), 1);
     this.kills++;
-    this.burst(p.x, 0.8, p.z, e.mats[0].color.getHex(), e.kind === 'boss' ? 30 : 12);
+    this.burst(p.x, 0.8, p.z, 0xe8e4d4, e.kind === 'boss' ? 30 : 10);
     if (this.stats.lifesteal > 0) this.heal(this.stats.lifesteal);
     if (e.kind === 'boss') $('boss').style.display = 'none';
     if (Math.random() < 0.18 || e.kind === 'boss') {
@@ -638,7 +706,7 @@ export class Game {
     this.hp -= d;
     this.hurtT = 0.6;
     this.shake = 0.5;
-    const p = this.rig.root.position;
+    const p = this.heroRoot.position;
     this.floatText(this.tmp.set(p.x, 2.2, p.z), `-${d}`, 'hurt');
     const hurt = $('hurt');
     hurt.style.opacity = '1';
@@ -652,7 +720,7 @@ export class Game {
     this.hp = Math.min(this.stats.maxHp, this.hp + amount);
     const got = Math.round(this.hp - before);
     if (got > 0 && this.state === 'play') {
-      const p = this.rig.root.position;
+      const p = this.heroRoot.position;
       this.floatText(this.tmp.set(p.x, 2.2, p.z), `+${got}`, 'heal');
     }
     this.updateHud();
@@ -668,19 +736,21 @@ export class Game {
   // ───────────────────────── 몬스터 ─────────────────────────
 
   private updateEnemies(dt: number) {
-    const pp = this.rig.root.position;
+    const pp = this.heroRoot.position;
     for (const e of [...this.enemies]) {
       const pos = e.root.position;
       e.phase += dt;
       if (e.flash > 0) {
         e.flash -= dt;
         const v = e.flash > 0 ? 0.8 : 0;
-        for (const m of e.mats) m.emissive.setRGB(v, v, v);
+        for (const m of e.actor.mats) m.emissive.setRGB(v, v, v);
       }
       if (e.state === 'spawn') {
         e.t -= dt;
-        e.root.scale.setScalar(e.scale * THREE.MathUtils.clamp(1 - e.t / 0.4, 0.01, 1));
-        if (e.t <= 0) e.state = 'chase';
+        if (e.t <= 0) {
+          e.state = 'chase';
+          e.actor.release();
+        }
         continue;
       }
       const dx = pp.x - pos.x;
@@ -711,6 +781,9 @@ export class Game {
           if (boss) e.attack = dist < e.def.range + e.r ? 'melee' : Math.random() < 0.5 ? 'burst' : 'charge';
           else e.attack = e.def.ranged ? 'shot' : 'melee';
           e.t = e.def.windup * (enraged ? 0.75 : 1);
+          e.root.rotation.y = Math.atan2(nx, nz);
+          const [clip, hitAt] = ATTACK_ANIM[`${e.kind}.${e.attack}`];
+          e.actor.play(clip, { once: true, speed: hitAt / e.t, fade: 0.08 });
           if (e.attack === 'melee') {
             e.tele.visible = true;
             e.tele.position.set(pos.x, 0.05, pos.z);
@@ -720,23 +793,16 @@ export class Game {
             e.line.rotation.y = Math.atan2(nx, nz);
           }
         }
-        // 걷는 느낌: 슬라임은 통통 튀고 나머지는 좌우로 흔들린다
-        if (e.kind === 'slime') {
-          const b = Math.abs(Math.sin(e.phase * 5));
-          e.root.scale.set(e.scale * (1.1 - b * 0.15), e.scale * (0.85 + b * 0.3), e.scale * (1.1 - b * 0.15));
-        } else {
-          e.root.rotation.z = Math.sin(e.phase * 8) * 0.06 * Math.abs(mv);
-        }
+        if (mv === 0) e.actor.play('Idle_Combat');
+        else e.actor.play(e.def.ranged ? 'Walking_A' : 'Running_A', { speed: e.def.ranged ? 1.5 : e.def.speed / 3 });
       } else if (e.state === 'windup') {
         e.t -= dt;
         const total = e.def.windup * (enraged ? 0.75 : 1);
         const q = 1 - Math.max(0, e.t) / total;
         const hitR = e.def.hitRadius * e.scale;
         if (e.attack === 'melee') e.tele.scale.setScalar(hitR * 2 * (0.3 + 0.7 * q));
-        e.root.rotation.z = Math.sin(e.phase * 40) * 0.05; // 공격 직전 떨림
         if (e.t <= 0) {
           e.tele.visible = false;
-          e.root.rotation.z = 0;
           e.state = 'recover';
           e.t = e.def.recover;
           e.cd = e.def.cooldown * (enraged ? 0.7 : 1);
@@ -758,6 +824,8 @@ export class Game {
             e.t = 0.75;
             e.chargeHit = false;
             e.line.visible = false;
+            e.actor.release();
+            e.actor.play('Running_A', { speed: 2.2 });
           }
         }
       } else if (e.state === 'charge') {
@@ -774,7 +842,10 @@ export class Game {
         }
       } else {
         e.t -= dt;
-        if (e.t <= 0) e.state = 'chase';
+        if (e.t <= 0) {
+          e.state = 'chase';
+          e.actor.release();
+        }
       }
 
       // 넉백과 서로 겹치지 않게 밀어내기
@@ -814,7 +885,7 @@ export class Game {
   }
 
   private updateProjectiles(dt: number) {
-    const pp = this.rig.root.position;
+    const pp = this.heroRoot.position;
     for (let i = this.projectiles.length - 1; i >= 0; i--) {
       const p = this.projectiles[i];
       const m = p.mesh.position;
@@ -838,7 +909,7 @@ export class Game {
   // ───────────────────────── 아이템 · 문 ─────────────────────────
 
   private updatePickups(dt: number) {
-    const pp = this.rig.root.position;
+    const pp = this.heroRoot.position;
     for (const pk of [...this.pickups]) {
       pk.t += dt;
       const o = pk.obj;
@@ -859,6 +930,10 @@ export class Game {
         // 일반 전투 상자는 절반 확률로 물약, 정예·보스 상자는 아이템 확정
         if (count === 1 && Math.random() < 0.5) this.giveItem(POTION);
         else for (let i = 0; i < count; i++) this.giveItem(pick(ITEMS));
+        const lid = o.getObjectByName('chest_gold_lid');
+        if (lid) lid.rotation.x = -1.1;
+        this.pickups.splice(this.pickups.indexOf(pk), 1);
+        continue;
       } else {
         this.giveItem(pk.item!);
         // 셋 중 하나만 고를 수 있다
@@ -874,7 +949,7 @@ export class Game {
   }
 
   private updateDoors() {
-    const pp = this.rig.root.position;
+    const pp = this.heroRoot.position;
     for (const d of this.doors) {
       if (d.open && Math.abs(pp.x - d.x) < 1.0 && pp.z < -this.hd + 1.3) {
         this.enterDoor(d);

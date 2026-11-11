@@ -25,7 +25,7 @@ npm run build    # 타입 검사 + dist/ 빌드
 - 한 층은 방 4개. 방을 정리하면 문이 열리고, 문 색과 글자로 다음 방 종류(전투 / 정예 / 보물)를 골라 들어간다.
 - 층의 마지막 방은 정예 방이고, 3층마다 보스 방이다. 정리하면 다음 층으로 가는 문이 열린다.
 - 전투 방을 정리하면 상자가 나온다(아이템 또는 물약, 정예·보스는 아이템 2개). 보물 방은 셋 중 하나를 고른다.
-- 몬스터: 슬라임, 해골 병사, 암흑 마법사(원거리), 보스 "탑의 수호자"(내려찍기 · 탄막 · 돌진). 붉은 바닥 표시가 공격 예고.
+- 몬스터: 해골 졸병, 해골 병사, 해골 마법사(원거리), 보스 "탑의 수호자"(내려찍기 · 탄막 · 돌진). 붉은 바닥 표시가 공격 예고.
 - 층이 오를수록 몬스터의 체력·공격력·수가 늘고, 3층마다 탑의 색조가 바뀐다.
 
 ## 코드
@@ -34,10 +34,19 @@ npm run build    # 타입 검사 + dist/ 빌드
 |---|---|
 | `src/game.ts` | 게임 루프, 방 생성, 전투, 몬스터 AI, 아이템, HUD |
 | `src/data.ts` | 플레이어 능력치, 아이템, 몬스터 수치 (밸런스 조정은 여기서) |
-| `src/models.ts` | 기본 도형으로 조립한 캐릭터·몬스터 모델과 절차적 텍스처 |
+| `src/assets.ts` | glTF 모델 로딩, 캐릭터 복제와 애니메이션 재생(`Actor`) |
+| `src/models.ts` | 방 구조물·이펙트용 기본 도형과 절차적 텍스처 |
 | `src/input.ts` | 터치 조이스틱·버튼, 키보드·마우스 입력 |
+| `scripts/build-assets.mjs` | 원본 모델에서 필요한 것만 골라 압축해 `public/models/`에 넣는 변환 스크립트 |
 
-모델은 전부 코드로 만든 임시 도형이다. 실제 glTF 에셋으로 바꿀 때는 `src/models.ts`의 `makeKnight` / `makeEnemy`를 교체하면 된다.
+## 모델과 애니메이션
+
+캐릭터(기사, 해골 졸병·병사·마법사, 보스)와 던전 소품은 [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의
+Adventurers / Skeletons / Dungeon Remastered 팩을 사용한다. 라이선스는 CC0로, 상업적 이용을 포함해 자유롭게 쓸 수 있다.
+
+변환된 파일(`public/models/*.glb`, 합계 약 2MB)이 저장소에 들어 있어 따로 받을 필요는 없다.
+모델이나 애니메이션을 추가하려면 `github.com/KayKit-Game-Assets`의 세 저장소를 한 폴더에 clone 한 뒤
+`scripts/build-assets.mjs`의 목록을 고치고 `node scripts/build-assets.mjs <그 폴더>`를 실행한다.
 
 ## Android / iOS 빌드 (Capacitor)
 
