@@ -3,6 +3,8 @@ export class Input {
   moveX = 0;
   moveY = 0;
   attack = false;
+  /** 걷기 키(C)를 누르고 있다. 터치에서는 조이스틱을 조금만 밀면 걷는다. */
+  walk = false;
   /** 이동 조이스틱을 화면 오른쪽에서 잡는다(왼손잡이 배치) */
   stickRight = false;
   private dodgeQueued = false;
@@ -136,6 +138,7 @@ export class Input {
     this.moveX = x;
     this.moveY = y;
     this.attack = this.btnAttack || k.has('KeyJ') || k.has('Space');
+    this.walk = k.has('KeyC');
     if (k.has('KeyQ')) this.camDX -= 320 * dt;
     if (k.has('KeyE')) this.camDX += 320 * dt;
   }

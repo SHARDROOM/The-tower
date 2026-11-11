@@ -29,7 +29,17 @@ const COMBO: { end: number; hits: [number, number][]; cancelAfter?: number }[] =
   { end: 0.95, hits: [[0.72, 1.15]] },                    // 2타: 크게 내려베기
   { end: 3.0, hits: [[1.15, 0.6], [1.53, 1.7]], cancelAfter: 2.05 }, // 3타: 뛰어올라 베고 내리찍기, 이후 일어서는 동작은 움직이면 끊는다
 ];
-const RUN_CLIP_SPEED = 3.6;    // Heavy_Run 동작이 맞춰진 이동 속도. 이 속도일 때 디딘 발이 미끄러지지 않는다
+// 주인공의 이동 동작. *_SPEED 는 그 동작이 자연스럽게 보이는 이동 속도(scripts/check-anim.mjs 의 추정값)로,
+// 실제 이동 속도에 맞춰 재생 속도를 조절해 발이 미끄러지지 않게 한다.
+const RUN_CLIP = 'sprint_loop_quaternius';
+const RUN_CLIP_SPEED = 5.25;
+const WALK_CLIP = 'walk_relaxed';
+const WALK_CLIP_SPEED = 1.25;
+const WALK_SPEED = 1.5;        // 걷는 이동 속도. 조이스틱을 WALK_TILT 보다 덜 밀거나 C 키를 누르면 걷는다
+const WALK_TILT = 0.6;
+// 달리다가 입력을 놓으면 급정거 동작이 나온다. 동작이 앞으로 미끄러지는 만큼(약 1.2) 실제로 밀려 나간다.
+const STOP_CLIP = 'sprint_exit_quaternius';
+const STOP_AFTER = 0.35;       // 이만큼(초) 이상 달린 뒤에 멈춰야 급정거한다
 // 구르기: 지속 시간(초, 이 동안 무적)과 이동 속도. 약 4m 를 구른다.
 const DODGE_TIME = 0.7;
 const DODGE_SPEED = 6;
@@ -129,6 +139,10 @@ export class Game {
   private comboHit = 0;      // 이번 구간에서 이미 판정한 타격 수
   private comboQueued = false;
   private slashT = 0;        // 검기 이펙트 남은 시간
+  private rootName = '';     // 루트 모션을 읽는 동작 이름
+  private rootActive = false; // 그 동작이 지금 캐릭터를 옮기는 중인가
+  private runTime = 0;       // 쉬지 않고 달린 시간
+  private stopping = false;  // 급정거 동작 중
   private rootTrack: THREE.Interpolant | null = null;
   private rootPrev = new THREE.Vector3();
   private rootStart = new THREE.Vector3();
@@ -339,6 +353,9 @@ export class Game {
     this.yaw = this.targetYaw = Math.PI;
     this.camYaw = 0;
     this.atkT = this.dodgeT = 0;
+    this.comboStage = -1;
+    this.stopping = this.rootActive = false;
+    this.runTime = 0;
     this.camTarget.copy(this.heroRoot.position);
 
     if (backdrop) {
@@ -598,6 +615,7 @@ export class Game {
     const wx = cy * mx - sy * my;
     const wz = -sy * mx - cy * my;
     const moving = len > 0.15;
+    const walking = moving && (len < WALK_TILT || inp.walk);
 
     if (inp.takeDodge() && this.dodgeCd <= 0) {
       const wl = Math.hypot(wx, wz);
@@ -607,6 +625,7 @@ export class Game {
       this.dodgeT = DODGE_TIME;
       this.dodgeCd = 1.1;
       this.endCombo(true);
+      this.cancelStop();
       this.hero.play('Roll', { once: true, speed: 1.4 / DODGE_TIME, fade: 0.08 }); // 구르고 일어서는 앞부분 1.4초를 쓴다
     }
 
@@ -615,13 +634,32 @@ export class Game {
       pos.x += this.dodgeX * DODGE_SPEED * dt;
       pos.z += this.dodgeZ * DODGE_SPEED * dt;
     } else {
-      if (inp.attack && this.atkT <= 0) this.startCombo();
+      if (inp.attack && this.atkT <= 0) {
+        this.cancelStop();
+        this.startCombo();
+      }
       // 공격 중에는 입력으로 움직이지 않는다(동작의 루트 모션이 캐릭터를 옮긴다)
-      const speed = this.atkT > 0 ? 0 : s.speed;
-      if (moving && speed > 0) {
-        pos.x += wx * speed * dt;
-        pos.z += wz * speed * dt;
-        if (this.atkT <= 0) this.targetYaw = Math.atan2(wx, wz);
+      if (moving && this.atkT <= 0) {
+        this.cancelStop();
+        // 걸음은 두 가지: 조금 밀면 걷고 끝까지 밀면 달린다. 속도는 걸음마다 일정하다.
+        const speed = walking ? WALK_SPEED : s.speed;
+        pos.x += (wx / len) * speed * dt;
+        pos.z += (wz / len) * speed * dt;
+        this.targetYaw = Math.atan2(wx, wz);
+      }
+    }
+    // 급정거: 한동안 달리다가 입력을 놓은 순간
+    const free = this.dodgeT <= 0 && this.atkT <= 0;
+    if (free && !moving && !this.stopping && this.runTime >= STOP_AFTER) this.startStop();
+    this.runTime = free && moving && !walking ? this.runTime + dt : 0;
+    if (this.stopping) {
+      const a = this.hero.action(STOP_CLIP)!;
+      if (a.time >= a.getClip().duration - 0.02) {
+        // 다 멈췄다: 일어선 자세 그대로 대기 자세로 넘어간다
+        this.stopping = false;
+        this.rootActive = false;
+        this.hero.release();
+        this.hero.play('Sword_Idle', { fade: 0.3 });
       }
     }
 
@@ -635,9 +673,11 @@ export class Game {
 
     // 애니메이션
     this.heroRoot.rotation.y = this.yaw;
-    if (this.dodgeT <= 0 && this.atkT <= 0) {
+    if (free && !this.stopping) {
       this.hero.release();
-      this.hero.play(moving ? 'Heavy_Run' : 'Sword_Idle', { speed: moving ? s.speed / RUN_CLIP_SPEED : 1, fade: 0.18 });
+      if (!moving) this.hero.play('Sword_Idle', { fade: 0.18 });
+      else if (walking) this.hero.play(WALK_CLIP, { speed: WALK_SPEED / WALK_CLIP_SPEED, fade: 0.22 });
+      else this.hero.play(RUN_CLIP, { speed: s.speed / RUN_CLIP_SPEED, fade: 0.18 });
     }
     this.slashT -= dt;
     this.slash.mesh.visible = this.slashT > 0;
@@ -674,10 +714,7 @@ export class Game {
     this.comboHit = 0;
     this.comboQueued = false;
     this.hero.play(COMBO_CLIP, { once: true, speed: COMBO_SPEED * this.stats.atkSpeed, fade: 0.1 });
-    const track = a.getClip().tracks.find((t) => t.name === 'Pelvis.position');
-    this.rootTrack = track ? (track as unknown as { createInterpolant(): THREE.Interpolant }).createInterpolant() : null;
-    this.sampleRoot(0, this.rootStart);
-    this.rootPrev.copy(this.rootStart);
+    this.startRoot(COMBO_CLIP);
     this.aimAtNearest();
     this.yaw = this.targetYaw;
   }
@@ -711,10 +748,38 @@ export class Game {
     if (this.atkT <= 0) return;
     this.atkT = 0;
     this.comboStage = -1;
+    this.rootActive = false;
     const a = this.hero.action(COMBO_CLIP);
     if (a) a.timeScale = 0;
     this.hero.release();
     if (!immediate) this.hero.play('Sword_Idle', { fade: 0.3 });
+  }
+
+  private startStop() {
+    if (!this.hero.action(STOP_CLIP)) return;
+    this.stopping = true;
+    this.hero.play(STOP_CLIP, { once: true, speed: 1.15, fade: 0.1 });
+    this.startRoot(STOP_CLIP);
+  }
+
+  /** 급정거 도중 다시 움직이거나 공격·회피하면 바로 끊는다. */
+  private cancelStop() {
+    if (!this.stopping) return;
+    this.stopping = false;
+    this.rootActive = false;
+    const a = this.hero.action(STOP_CLIP);
+    if (a) a.timeScale = 0;
+    this.hero.release();
+  }
+
+  /** 이 동작의 골반 이동(루트 모션)으로 캐릭터를 옮기기 시작한다. */
+  private startRoot(name: string) {
+    const track = this.hero.action(name)!.getClip().tracks.find((t) => t.name === 'Pelvis.position');
+    this.rootTrack = track ? (track as unknown as { createInterpolant(): THREE.Interpolant }).createInterpolant() : null;
+    this.rootName = name;
+    this.rootActive = true;
+    this.sampleRoot(0, this.rootStart);
+    this.rootPrev.copy(this.rootStart);
   }
 
   private sampleRoot(t: number, out: THREE.Vector3) {
@@ -724,11 +789,11 @@ export class Game {
   }
 
   /**
-   * 루트 모션: 연속기 동작의 골반이 앞뒤·좌우로 움직인 만큼 캐릭터를 실제로 옮기고, 모델은 그만큼 되돌려
+   * 루트 모션: 연속기·급정거 동작의 골반이 앞뒤·좌우로 움직인 만큼 캐릭터를 실제로 옮기고, 모델은 그만큼 되돌려
    * 제자리에 둔다. 동작이 다른 동작으로 넘어가며 흐려지는 동안에도 그 비율만큼 계속 상쇄한다.
    */
   private applyRootMotion() {
-    const a = this.hero.action(COMBO_CLIP);
+    const a = this.hero.action(this.rootName);
     const w = a ? a.getEffectiveWeight() : 0;
     if (!a || !this.rootTrack || w <= 0) {
       this.hero.root.position.set(0, 0, 0);
@@ -737,7 +802,7 @@ export class Game {
     // 모델 단위 → heroRoot 기준 단위 (Armature 배율 × 주인공 배율)
     const k = (this.hero.root.getObjectByName('Armature')?.scale.x ?? 1) * HERO_SCALE;
     const cur = this.sampleRoot(a.time, this.tmp.clone());
-    if (this.atkT > 0) {
+    if (this.rootActive) {
       const d = cur.clone().sub(this.rootPrev).multiplyScalar(k);
       const c = Math.cos(this.yaw), sn = Math.sin(this.yaw);
       this.heroRoot.position.x += d.x * c + d.z * sn;

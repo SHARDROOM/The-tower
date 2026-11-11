@@ -131,6 +131,17 @@ report(worstJerk.v < 600, '회전 속도 급변', `${worstJerk.name} 한 프레�
 const py = frames.map((fr) => fr.p.Pelvis.y);
 console.log(`       골반 높이: ${fmt(Math.min(...py))} ~ ${fmt(Math.max(...py))} (출렁임 ${fmt(Math.max(...py) - Math.min(...py))}, 기본 자세 ${fmt(rest.Pelvis.y)})`);
 
+// ── 제자리 이동 동작의 자연스러운 속도 추정: 더 낮은 쪽 발끝이 뒤로 밀려가는 평균 속도 ──
+{
+  let sum = 0, time = 0;
+  for (let f = 1; f < n; f++) {
+    const s = frames[f].p.L_Foot.y < frames[f].p.R_Foot.y ? 'L' : 'R';
+    const v = (frames[f - 1].p[`${s}_Foot`].z - frames[f].p[`${s}_Foot`].z) / dt;
+    if (v > 0.3) { sum += v * dt; time += dt; }
+  }
+  if (time > 0.1) console.log(`       추정 이동 속도: 초당 ${fmt(sum / time, 2)} (낮은 쪽 발이 뒤로 가는 평균 속도, ${fmt(time, 2)}초 구간)`);
+}
+
 // ── 이동 동작: 발 미끄러짐 ──
 if (gameSpeed) {
   // 이음매
