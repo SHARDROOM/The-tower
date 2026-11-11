@@ -11,8 +11,8 @@ const NAMES = [
 ] as const;
 export type AssetName = (typeof NAMES)[number];
 
-const store = new Map<AssetName, { scene: THREE.Group }>();
-/** 모든 캐릭터가 같은 뼈대를 쓰므로 애니메이션 클립은 한 벌을 공유한다. */
+const store = new Map<AssetName, { scene: THREE.Group; clips?: THREE.AnimationClip[] }>();
+/** 공용 뼈대를 쓰는 캐릭터들이 함께 쓰는 클립. 자기 파일에 동작이 든 캐릭터(주인공)는 그것을 쓴다. */
 let clips: THREE.AnimationClip[] = [];
 
 /**
@@ -24,7 +24,7 @@ function retargetable(clip: THREE.AnimationClip) {
   return clip;
 }
 
-/** 무기를 쥐는 손 뼈(hand_r) 기준 자세. 쥔 주먹 위로 칼날이 서도록 맞춘 값이다. */
+/** 무기를 쥐는 손 뼈(공용 뼈대의 hand_r) 기준 자세. 쥔 주먹 위로 칼날이 서도록 맞춘 값이다. */
 const GRIP: Partial<Record<AssetName, { p: [number, number, number]; r: [number, number, number]; s: number }>> = {
   sword: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 1 },
   blade: { p: [0, 0.1, 0.03], r: [0, 0, -Math.PI / 2], s: 0.7 },
@@ -53,6 +53,29 @@ function simplify(scene: THREE.Object3D) {
   });
 }
 
+/**
+ * 주인공 뼈대(R_Wrist 아래에 손가락 뼈가 있는 규격)의 오른손에 무기를 쥐여 준다.
+ * 이 뼈대는 기본 자세의 뼈 회전이 0 이라, 손가락 뼈 위치로 손의 방향을 직접 구한다:
+ * 손가락이 뻗은 방향과 검지→새끼 손가락 뿌리를 잇는 선에서 손바닥 방향과 칼날이 설 방향(엄지 쪽)을 얻는다.
+ */
+function gripInHand(hand: THREE.Object3D, weapon: THREE.Object3D) {
+  const middle = hand.getObjectByName('R_Middle1');
+  const index = hand.getObjectByName('R_Index1');
+  const pinky = hand.getObjectByName('R_Pinky1');
+  if (!middle || !index || !pinky) return;
+  const fingers = middle.position.clone().normalize();
+  const across = pinky.position.clone().sub(index.position);
+  across.addScaledVector(fingers, -across.dot(fingers)).normalize();
+  const palm = new THREE.Vector3().crossVectors(fingers, across); // 오른손 기준 손바닥 방향
+  const blade = across.clone().negate(); // 엄지 쪽
+  // 무기의 날 방향(+Y)을 blade 로, 날의 넓은 면(X)을 손바닥 방향으로 세운다
+  const side = new THREE.Vector3().crossVectors(palm, blade);
+  weapon.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(palm, blade, side));
+  weapon.position.copy(middle.position).multiplyScalar(0.75).addScaledVector(palm, middle.position.length() * 0.35);
+  // 뼈대 전체가 배율로 감싸여 있으므로 무기 크기를 되돌린다
+  weapon.scale.divide(hand.getWorldScale(new THREE.Vector3()));
+}
+
 export async function loadAssets(onProgress: (ratio: number) => void) {
   const loader = new GLTFLoader();
   loader.setMeshoptDecoder(MeshoptDecoder);
@@ -61,8 +84,12 @@ export async function loadAssets(onProgress: (ratio: number) => void) {
     NAMES.map(async (name) => {
       const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}models/${name}.glb`);
       simplify(gltf.scene);
-      store.set(name, { scene: gltf.scene });
-      if (name === 'mannequin') clips = gltf.animations.map(retargetable);
+      if (name === 'mannequin') {
+        clips = gltf.animations.map(retargetable);
+        store.set(name, { scene: gltf.scene });
+      } else {
+        store.set(name, { scene: gltf.scene, clips: gltf.animations.length ? gltf.animations : undefined });
+      }
       onProgress(++done / NAMES.length);
     }),
   );
@@ -117,16 +144,23 @@ export class Actor {
       mesh.material = c;
     });
     if (opts.right) {
-      const g = GRIP[opts.right]!;
-      const weapon = prop(opts.right, g.s);
+      const weapon = prop(opts.right, GRIP[opts.right]!.s);
       weapon.name = 'weapon';
-      weapon.position.set(...g.p);
-      weapon.rotation.set(...g.r);
-      this.root.getObjectByName('hand_r')?.add(weapon);
+      const wrist = this.root.getObjectByName('R_Wrist');
+      if (wrist) {
+        wrist.add(weapon);
+        this.root.updateMatrixWorld(true);
+        gripInHand(wrist, weapon);
+      } else {
+        const g = GRIP[opts.right]!;
+        weapon.position.set(...g.p);
+        weapon.rotation.set(...g.r);
+        this.root.getObjectByName('hand_r')?.add(weapon);
+      }
     }
 
     this.mixer = new THREE.AnimationMixer(this.root);
-    for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
+    for (const clip of src.clips ?? clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.mixer.addEventListener('finished', () => (this.busy = false));
   }
 

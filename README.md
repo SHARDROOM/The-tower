@@ -43,6 +43,7 @@ npm run build    # 타입 검사 + dist/ 빌드
 | `src/models.ts` | 방 구조물·이펙트용 기본 도형과 절차적 텍스처 |
 | `src/settings.ts` | 두루마리 설정창, 버튼 크기·배치 설정과 저장 |
 | `src/input.ts` | 터치 조이스틱·버튼, 키보드·마우스 입력 |
+| `scripts/retarget.mjs` | 리깅된 모델에 공용 동작을 옮겨 담는 스크립트 |
 | `scripts/rig-character.mjs` | 뼈대 없는 인간형 모델에 공용 뼈대를 자동으로 심는 스크립트 |
 | `scripts/convert-weapon.mjs` | 세워진 무기 모델을 손에 쥘 수 있는 소품으로 변환하는 스크립트 |
 | `scripts/build-assets.mjs` | 원본 모델에서 필요한 것만 골라 압축해 `public/models/`에 넣는 변환 스크립트 |
@@ -54,9 +55,10 @@ npm run build    # 타입 검사 + dist/ 빌드
 - 캐릭터(7~8등신)와 애니메이션: [Quaternius](https://quaternius.com)의 Universal Animation Library,
   Modular Character Outfits – Fantasy, Universal Base Characters (무료 Standard 판).
   모든 캐릭터가 같은 뼈대를 쓰므로 애니메이션은 `mannequin.glb` 한 벌을 공유한다.
-- 주인공(검은 갑옷 기사): 직접 제공한 정지 모델에 `scripts/rig-character.mjs`로 공용 뼈대를 심은 것.
-  다른 인간형 모델(A자/T자 자세, 정면이 +Z, 메시 한 덩어리)도
-  `node scripts/rig-character.mjs <입력.glb> <이름>`으로 같은 애니메이션을 쓰게 만들 수 있다.
+- 주인공(검은 갑옷 기사): 직접 제공한 리깅된 모델(손가락 포함 52개 뼈)에 공용 동작을 옮겨 담은 것.
+  이 뼈대는 공용 뼈대와 뼈 이름도 기본 자세도 달라서(모델은 A자, 공용 뼈대는 T자),
+  `scripts/retarget.mjs`가 프레임마다 월드 공간 회전을 옮긴다: `node scripts/retarget.mjs <리깅된 모델.glb> <이름>`.
+  뼈대가 없는 모델이라면 `scripts/rig-character.mjs`로 공용 뼈대에 자동 리깅할 수 있다(품질은 더 낮다).
 - 주인공의 검: 직접 제공한 모델을 `scripts/convert-weapon.mjs`로 변환한 것.
 - 소품과 무기: [KayKit](https://www.kaylousberg.com) (Kay Lousberg)의 Dungeon Remastered / Adventurers / Skeletons 팩.
 
